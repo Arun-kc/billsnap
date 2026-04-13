@@ -1,0 +1,37 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Alembic — keep versions but not local state
+alembic/versions/__pycache__/
+
+# Sample bills — may contain personal/financial data
+evals/ocr_benchmark/sample_bills/
+evals/ocr_benchmark/results/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+dist/
+.turbo/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
