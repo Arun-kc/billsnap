@@ -1,0 +1,30 @@
+<svg width="44" height="44" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BillSnap icon">
+  <!-- Background square (for app icon context) -->
+  <rect width="44" height="44" rx="10" fill="#5C2D91"/>
+
+  <defs>
+    <linearGradient id="bill-od" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#9B6FD4"/>
+      <stop offset="100%" stop-color="#3D1F78"/>
+    </linearGradient>
+    <linearGradient id="fold-od" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F5DC87"/>
+      <stop offset="100%" stop-color="#C9A227"/>
+    </linearGradient>
+    <linearGradient id="bolt-od" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F5DC87"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="rotate(-8 22 22)">
+    <path d="M10 10 C10 8.9 10.9 8 12 8H26L34 16V37 C34 38.1 33.1 39 32 39H12 C10.9 39 10 38.1 10 37Z"
+          fill="rgba(0,0,0,0.3)" transform="translate(2 2)"/>
+    <path d="M10 10 C10 8.9 10.9 8 12 8H26L34 16V37 C34 38.1 33.1 39 32 39H12 C10.9 39 10 38.1 10 37Z"
+          fill="url(#bill-od)"/>
+    <path d="M26 8L34 16H28 C26.9 16 26 15.1 26 14Z" fill="url(#fold-od)"/>
+    <line x1="14" y1="22" x2="28" y2="22" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="14" y1="27" x2="26" y2="27" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+  <path d="M30,6 L21,20 L27,20 L24,32 L35,17 L29,17 Z" fill="url(#bolt-od)"/>
+</svg>

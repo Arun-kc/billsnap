@@ -1,42 +1,6 @@
+import { Check, X, FileText, Smartphone, Shield } from "lucide-react";
 import Nav from "@/components/Nav";
 import WaitlistForm from "@/components/WaitlistForm";
-
-/* ── Inline SVG icons ───────────────────────────────────────── */
-function CheckIcon() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      className="h-5 w-5 flex-shrink-0 text-accent"
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path
-        fillRule="evenodd"
-        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
-function CrossIcon() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      className="h-5 w-5 flex-shrink-0 text-rose-400"
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path
-        fillRule="evenodd"
-        d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
 
 /* ── Steps data ─────────────────────────────────────────────── */
 const steps = [
@@ -79,15 +43,15 @@ const comparison = [
 /* ── Trust signals ──────────────────────────────────────────── */
 const trustSignals = [
   {
-    icon: "📋",
+    icon: FileText,
     label: "Reads GST, handwritten & printed bills",
   },
   {
-    icon: "📱",
+    icon: Smartphone,
     label: "Works on any Android phone",
   },
   {
-    icon: "🔒",
+    icon: Shield,
     label: "Your bills stay private",
   },
 ];
@@ -128,7 +92,7 @@ export default function Home() {
                 (badge) => (
                   <span
                     key={badge}
-                    className="rounded-full border border-brand-orange/30 bg-brand-orange-light px-4 py-1.5 text-sm font-medium text-brand-orange-dark"
+                    className="rounded-full border border-brand-purple/20 bg-brand-purple-light px-4 py-1.5 text-sm font-medium text-brand-purple"
                   >
                     {badge}
                   </span>
@@ -153,7 +117,7 @@ export default function Home() {
           className="bg-white px-5 py-16 sm:py-20"
         >
           <div className="mx-auto max-w-2xl">
-            <div className="rounded-2xl bg-[#FFFBF7] border border-orange-100 px-8 py-10 sm:px-12 sm:py-14">
+            <div className="rounded-2xl bg-surface border border-brand-border px-8 py-10 sm:px-12 sm:py-14">
               <h2
                 id="problem-heading"
                 className="font-display text-2xl font-bold text-brand-text sm:text-3xl"
@@ -218,16 +182,16 @@ export default function Home() {
               See the difference
             </h2>
 
-            <div className="mt-10 overflow-hidden rounded-2xl border border-gray-100 shadow-card">
+            <div className="mt-10 overflow-hidden rounded-2xl border border-brand-border shadow-card">
               {/* Column headers */}
               <div className="grid grid-cols-2">
-                <div className="bg-rose-50 px-6 py-4 text-center">
-                  <span className="font-display text-sm font-bold uppercase tracking-wider text-rose-500">
+                <div className="bg-[#F9F0FD] px-6 py-4 text-center">
+                  <span className="font-display text-sm font-bold uppercase tracking-wider text-brand-purple">
                     Before BillSnap
                   </span>
                 </div>
-                <div className="bg-green-50 px-6 py-4 text-center">
-                  <span className="font-display text-sm font-bold uppercase tracking-wider text-green-600">
+                <div className="bg-[#E6F4EE] px-6 py-4 text-center">
+                  <span className="font-display text-sm font-bold uppercase tracking-wider text-[#1A8C5B]">
                     After BillSnap
                   </span>
                 </div>
@@ -237,19 +201,25 @@ export default function Home() {
               {comparison.map((row, i) => (
                 <div
                   key={i}
-                  className={`grid grid-cols-2 divide-x divide-gray-100 ${
-                    i < comparison.length - 1 ? "border-b border-gray-100" : ""
+                  className={`grid grid-cols-2 divide-x divide-brand-border ${
+                    i < comparison.length - 1 ? "border-b border-brand-border" : ""
                   }`}
                 >
-                  <div className="flex items-start gap-3 bg-rose-50/40 px-6 py-5">
-                    <CrossIcon />
-                    <p className="text-sm leading-relaxed text-rose-700">
+                  <div className="flex items-start gap-3 bg-[#F9F0FD]/40 px-6 py-5">
+                    <X
+                      className="h-5 w-5 flex-shrink-0 text-brand-purple/60 mt-0.5"
+                      aria-hidden="true"
+                    />
+                    <p className="text-sm leading-relaxed text-brand-text/70">
                       {row.before}
                     </p>
                   </div>
-                  <div className="flex items-start gap-3 bg-green-50/40 px-6 py-5">
-                    <CheckIcon />
-                    <p className="text-sm leading-relaxed text-green-700">
+                  <div className="flex items-start gap-3 bg-[#E6F4EE]/40 px-6 py-5">
+                    <Check
+                      className="h-5 w-5 flex-shrink-0 text-[#1A8C5B] mt-0.5"
+                      aria-hidden="true"
+                    />
+                    <p className="text-sm leading-relaxed text-brand-text/80">
                       {row.after}
                     </p>
                   </div>
@@ -285,23 +255,23 @@ export default function Home() {
               role="list"
               aria-label="Key benefits"
             >
-              {trustSignals.map((signal) => (
-                <li
-                  key={signal.label}
-                  className="flex items-start gap-4 rounded-2xl border border-orange-100 bg-white px-6 py-6 shadow-card"
-                >
-                  <span
-                    className="text-3xl leading-none"
-                    role="img"
-                    aria-hidden="true"
+              {trustSignals.map((signal) => {
+                const Icon = signal.icon;
+                return (
+                  <li
+                    key={signal.label}
+                    className="flex items-start gap-4 rounded-2xl border border-brand-border bg-white px-6 py-6 shadow-card"
                   >
-                    {signal.icon}
-                  </span>
-                  <p className="font-medium leading-snug text-brand-text">
-                    {signal.label}
-                  </p>
-                </li>
-              ))}
+                    <Icon
+                      className="h-6 w-6 flex-shrink-0 text-accent mt-0.5"
+                      aria-hidden="true"
+                    />
+                    <p className="font-medium leading-snug text-brand-text">
+                      {signal.label}
+                    </p>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </section>
@@ -337,10 +307,10 @@ export default function Home() {
         </section>
       </main>
 
-      {/* Section 7 — Footer */}
+      {/* Footer */}
       <footer className="bg-white px-5 py-8 text-center">
         <p className="text-sm text-brand-muted">
-          &copy; 2026 BillSnap. Made with ❤️ in Kerala.
+          &copy; 2026 BillSnap. Made with care in Kerala.
         </p>
       </footer>
     </>

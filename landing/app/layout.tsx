@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
-import { Inter, Syne } from "next/font/google";
+import { Manrope, Urbanist } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
+const manrope = Manrope({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-manrope",
   display: "swap",
 });
 
-const syne = Syne({
+const urbanist = Urbanist({
   subsets: ["latin"],
-  variable: "--font-syne",
+  variable: "--font-urbanist",
   display: "swap",
 });
 
@@ -69,7 +69,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en-IN" className={`${inter.variable} ${syne.variable}`}>
+    <html lang="en-IN" className={`${manrope.variable} ${urbanist.variable}`}>
       <head>
         <script
           type="application/ld+json"

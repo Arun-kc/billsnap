@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 
 type FormState = "idle" | "loading" | "success" | "error";
 
@@ -61,7 +62,7 @@ export default function WaitlistForm({
         className={`rounded-2xl px-6 py-5 text-center ${
           darkMode
             ? "bg-white/20 text-white"
-            : "bg-accent/10 text-green-800"
+            : "bg-[var(--color-success-light)] text-[var(--color-success)]"
         }`}
       >
         <p className="text-lg font-semibold">
@@ -103,42 +104,22 @@ export default function WaitlistForm({
           className={`min-h-[48px] flex-1 rounded-xl border px-4 py-3 text-base text-brand-text placeholder:text-brand-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors ${
             darkMode
               ? "bg-white/20 border-white/30 text-white placeholder:text-white/60 focus:ring-white"
-              : "bg-white border-gray-200"
-          } ${state === "error" ? "border-red-400" : ""}`}
+              : "bg-white border-brand-border"
+          } ${state === "error" ? "border-[var(--color-error)]" : ""}`}
         />
         <button
           type="submit"
           disabled={state === "loading"}
           className={`min-h-[48px] rounded-xl px-6 py-3 text-base font-semibold transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-70 disabled:cursor-not-allowed ${
             darkMode
-              ? "bg-white text-primary hover:bg-orange-50 focus:ring-white focus:ring-offset-primary"
-              : "bg-primary text-white hover:bg-brand-orange-dark focus:ring-primary"
+              ? "bg-white text-primary hover:bg-brand-purple-light focus:ring-white focus:ring-offset-primary"
+              : "bg-primary text-white hover:bg-brand-purple-dark focus:ring-primary"
           }`}
           aria-label={state === "loading" ? "Saving your spot..." : buttonText}
         >
           {state === "loading" ? (
             <span className="flex items-center justify-center gap-2">
-              <svg
-                className="h-4 w-4 animate-spin"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                />
-              </svg>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               <span>Saving...</span>
             </span>
           ) : (
@@ -151,7 +132,7 @@ export default function WaitlistForm({
         <p
           id="waitlist-error"
           role="alert"
-          className={`mt-2 text-sm ${darkMode ? "text-red-200" : "text-red-600"}`}
+          className={`mt-2 text-sm ${darkMode ? "text-red-200" : "text-[var(--color-error)]"}`}
         >
           {errorMessage}
         </p>

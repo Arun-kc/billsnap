@@ -1,0 +1,36 @@
+<svg width="200" height="44" viewBox="0 0 200 44" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BillSnap">
+  <defs>
+    <linearGradient id="bill-l" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7340BE"/>
+      <stop offset="100%" stop-color="#2A1450"/>
+    </linearGradient>
+    <linearGradient id="fold-l" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E8BF45"/>
+      <stop offset="100%" stop-color="#A07A1A"/>
+    </linearGradient>
+    <linearGradient id="bolt-l" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F5DC87"/>
+      <stop offset="100%" stop-color="#C9A227"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon (44×44) -->
+  <g>
+    <!-- Tilted bill -->
+    <g transform="rotate(-8 22 22)">
+      <path d="M10 10 C10 8.9 10.9 8 12 8H26L34 16V37 C34 38.1 33.1 39 32 39H12 C10.9 39 10 38.1 10 37Z"
+            fill="#0E0520" opacity="0.3" transform="translate(2 2)"/>
+      <path d="M10 10 C10 8.9 10.9 8 12 8H26L34 16V37 C34 38.1 33.1 39 32 39H12 C10.9 39 10 38.1 10 37Z"
+            fill="url(#bill-l)"/>
+      <path d="M26 8L34 16H28 C26.9 16 26 15.1 26 14Z" fill="url(#fold-l)"/>
+      <line x1="14" y1="22" x2="28" y2="22" stroke="rgba(255,255,255,0.22)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="14" y1="27" x2="26" y2="27" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" stroke-linecap="round"/>
+    </g>
+    <!-- Lightning bolt -->
+    <path d="M30,6 L21,20 L27,20 L24,32 L35,17 L29,17 Z" fill="url(#bolt-l)"/>
+  </g>
+
+  <!-- Wordmark — "Bill" in ink, "Snap" in aubergine -->
+  <text x="54" y="30" font-family="Urbanist, system-ui, sans-serif" font-size="22" font-weight="700" letter-spacing="-0.02em" fill="#1A0D2E">Bill</text>
+  <text x="93" y="30" font-family="Urbanist, system-ui, sans-serif" font-size="22" font-weight="700" letter-spacing="-0.02em" fill="#5C2D91">Snap</text>
+</svg>
