@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import bills, dashboard, jobs
+from .routers import bills, dashboard, jobs, waitlist
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
@@ -16,9 +16,11 @@ app = FastAPI(
     version="0.1.0",
 )
 
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Next.js dev server
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,6 +29,7 @@ app.add_middleware(
 app.include_router(bills.router)
 app.include_router(jobs.router)
 app.include_router(dashboard.router)
+app.include_router(waitlist.router)
 
 _worker_task: asyncio.Task | None = None
 

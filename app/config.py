@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # App
     app_env: str = "development"
     log_level: str = "INFO"
+    cors_origins: str = "http://localhost:3000"
 
     @property
     def is_development(self) -> bool:
