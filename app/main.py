@@ -55,4 +55,4 @@ async def shutdown() -> None:
 
 @app.get("/health", tags=["health"])
 async def health():
-    return {"status": "ok", "env": settings.app_env}
+    return {"status": "ok"}

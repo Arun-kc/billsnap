@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+.git
+.venv
+venv
+__pycache__
+*.py[cod]
+*.egg-info
+evals/ocr_benchmark/sample_bills/
+evals/ocr_benchmark/results/
+node_modules
+landing/.next
+landing/node_modules

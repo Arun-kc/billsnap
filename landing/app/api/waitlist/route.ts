@@ -36,7 +36,10 @@ export async function POST(request: NextRequest) {
   }
 
   // Forward to BillSnap FastAPI backend
-  const apiBase = process.env.BILLSNAP_API_URL ?? "https://api-production-e09b5.up.railway.app";
+  const apiBase = process.env.BILLSNAP_API_URL;
+  if (!apiBase) {
+    return NextResponse.json({ error: "Service unavailable." }, { status: 503 });
+  }
 
   try {
     const upstream = await fetch(`${apiBase}/api/v1/waitlist`, {

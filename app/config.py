@@ -1,3 +1,6 @@
+import secrets
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,15 +35,24 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: str = "http://localhost:3000"
 
+    @model_validator(mode="after")
+    def check_production_secrets(self) -> "Settings":
+        if self.app_env == "production":
+            if self.auth_token_owner in ("change-me-owner", ""):
+                raise ValueError("AUTH_TOKEN_OWNER must be set to a secure value in production")
+            if self.auth_token_admin in ("change-me-admin", ""):
+                raise ValueError("AUTH_TOKEN_ADMIN must be set to a secure value in production")
+        return self
+
     @property
     def is_development(self) -> bool:
         return self.app_env == "development"
 
     def token_to_role(self, token: str) -> str | None:
         """Map a bearer token to a role. Returns None if invalid."""
-        if token == self.auth_token_owner:
+        if secrets.compare_digest(token, self.auth_token_owner):
             return "owner"
-        if token == self.auth_token_admin:
+        if secrets.compare_digest(token, self.auth_token_admin):
             return "admin"
         return None
 

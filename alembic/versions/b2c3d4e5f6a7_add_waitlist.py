@@ -17,7 +17,12 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "waitlist",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("contact", sa.String(320), nullable=False, unique=True),
         sa.Column(
             "created_at",
