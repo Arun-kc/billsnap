@@ -48,8 +48,11 @@ async def _process_job(job: OcrJob, db: AsyncSession) -> None:
         except Exception as e:
             logger.warning("Thumbnail generation failed for job %s: %s", job.id, e)
 
-        # Run OCR
-        result = await ocr_service.extract(image_bytes, job.file_content_type)
+        # Run OCR. owner_gstin will be threaded from users.gstin in Stage 3
+        # once the migration lands; until then pass None (classifier returns "unknown").
+        result = await ocr_service.extract(
+            image_bytes, job.file_content_type, owner_gstin=None
+        )
 
         # Persist raw response for reprocessing / debugging
         job.raw_ocr_response = result.extracted
@@ -65,7 +68,12 @@ async def _process_job(job: OcrJob, db: AsyncSession) -> None:
         # Create bill record
         await bill_service.create_from_ocr(db, job, result.extracted, confidence_numeric)
 
-        job.status = "needs_review" if result.needs_review else "completed"
+        if result.needs_manual_entry:
+            job.status = "needs_manual_entry"
+        elif result.needs_review:
+            job.status = "needs_review"
+        else:
+            job.status = "completed"
         job.completed_at = datetime.now(timezone.utc)
         await db.commit()
         logger.info("Job %s completed (%s, confidence=%s)", job.id, result.model_used, result.confidence)

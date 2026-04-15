@@ -14,6 +14,7 @@ from app.services.ocr_service import (
     SONNET_MODEL,
     ExtractionResult,
     _cost_inr,
+    _is_ocr_blank,
     _is_valid_gstin,
     _needs_sonnet_retry,
     _parse_json_response,
@@ -90,52 +91,101 @@ class TestIsValidGstin:
 # ---------------------------------------------------------------------------
 
 class TestNeedsSonnetRetry:
-    def test_low_confidence_triggers_retry(self):
-        extracted = {"extraction_confidence": "low", "vendor_name": "Test"}
-        assert _needs_sonnet_retry(extracted, confidence_threshold=0.70) is True
+    """The retry gate is structural: self-reported confidence no longer matters.
 
-    def test_high_confidence_no_retry(self):
+    We retry only when a required field is broken — missing vendor, missing
+    amount, invalid GSTIN regex, or a word-form/numeric disagreement.
+    """
+
+    def test_missing_vendor_name_triggers_retry(self):
+        extracted = {"vendor_name": None, "total_amount": 1000.0}
+        assert _needs_sonnet_retry(extracted) is True
+
+    def test_short_vendor_name_triggers_retry(self):
+        extracted = {"vendor_name": "XY", "total_amount": 1000.0}
+        assert _needs_sonnet_retry(extracted) is True
+
+    def test_missing_total_amount_triggers_retry(self):
+        extracted = {"vendor_name": "Kerala Electricals", "total_amount": None}
+        assert _needs_sonnet_retry(extracted) is True
+
+    def test_invalid_vendor_gstin_triggers_retry(self):
+        extracted = {
+            "vendor_name": "Kerala Electricals",
+            "total_amount": 1180.0,
+            "vendor_gstin": "NOT-A-GSTIN",
+        }
+        assert _needs_sonnet_retry(extracted) is True
+
+    def test_medium_confidence_alone_does_not_trigger_retry(self):
+        extracted = {
+            "extraction_confidence": "medium",
+            "vendor_name": "Kerala Electricals",
+            "vendor_gstin": "32ABCDE1234F1Z5",
+            "total_amount": 1180.0,
+        }
+        assert _needs_sonnet_retry(extracted) is False
+
+    def test_complete_high_confidence_no_retry(self):
         extracted = {
             "extraction_confidence": "high",
+            "vendor_name": "Kerala Electricals",
             "vendor_gstin": "32ABCDE1234F1Z5",
+            "total_amount": 1180.0,
             "cgst_amount": 90.0,
         }
-        assert _needs_sonnet_retry(extracted, confidence_threshold=0.70) is False
+        assert _needs_sonnet_retry(extracted) is False
 
-    def test_medium_with_invalid_gstin_triggers_retry(self):
-        # threshold=0.50: medium (0.6) passes confidence check; invalid GSTIN triggers retry
+    def test_credit_note_uses_credit_amount(self):
         extracted = {
-            "extraction_confidence": "medium",
-            "vendor_gstin": "INVALID",
-            "cgst_amount": 90.0,
+            "document_type": "credit_note",
+            "vendor_name": "Thanks Marketing",
+            "credit_amount": 4344.0,
         }
-        assert _needs_sonnet_retry(extracted, confidence_threshold=0.50) is True
+        assert _needs_sonnet_retry(extracted) is False
 
-    def test_medium_with_missing_tax_triggers_retry(self):
-        # threshold=0.50: medium (0.6) passes confidence check; missing tax triggers retry
+    def test_credit_note_missing_credit_amount_triggers_retry(self):
         extracted = {
-            "extraction_confidence": "medium",
-            "vendor_gstin": "32ABCDE1234F1Z5",
-            "cgst_amount": None,
-            "sgst_amount": None,
-            "igst_amount": None,
+            "document_type": "credit_note",
+            "vendor_name": "Thanks Marketing",
+            "credit_amount": None,
         }
-        assert _needs_sonnet_retry(extracted, confidence_threshold=0.50) is True
+        assert _needs_sonnet_retry(extracted) is True
 
-    def test_medium_with_valid_fields_no_retry(self):
-        # threshold=0.50: medium (0.6) passes; valid GSTIN + tax present → no retry
+    def test_word_form_mismatch_triggers_retry(self):
         extracted = {
-            "extraction_confidence": "medium",
-            "vendor_gstin": "32ABCDE1234F1Z5",
-            "cgst_amount": 90.0,
-            "sgst_amount": 90.0,
+            "vendor_name": "Kerala Electricals",
+            "total_amount": 10200000.0,
+            "total_amount_in_words": "Rupees Ten Thousand Two Hundred Only",
         }
-        assert _needs_sonnet_retry(extracted, confidence_threshold=0.50) is False
+        assert _needs_sonnet_retry(extracted) is True
 
-    def test_threshold_boundary(self):
-        # confidence=0.6 (medium) < confidence_threshold=0.70 → retry
-        extracted = {"extraction_confidence": "medium"}
-        assert _needs_sonnet_retry(extracted, confidence_threshold=0.70) is True
+
+# ---------------------------------------------------------------------------
+# _is_ocr_blank
+# ---------------------------------------------------------------------------
+
+
+class TestIsOcrBlank:
+    def test_all_critical_fields_null_is_blank(self):
+        extracted = {"document_type": "tax_invoice", "vendor_name": None, "total_amount": None, "bill_date": None}
+        assert _is_ocr_blank(extracted) is True
+
+    def test_one_critical_field_populated_is_not_blank(self):
+        extracted = {"document_type": "tax_invoice", "vendor_name": "KS Traders", "total_amount": None, "bill_date": None}
+        assert _is_ocr_blank(extracted) is False
+
+    def test_credit_note_uses_credit_fields(self):
+        extracted = {"document_type": "credit_note", "vendor_name": None, "credit_amount": None, "document_date": None}
+        assert _is_ocr_blank(extracted) is True
+
+    def test_credit_note_with_amount_is_not_blank(self):
+        extracted = {"document_type": "credit_note", "vendor_name": None, "credit_amount": 500.0, "document_date": None}
+        assert _is_ocr_blank(extracted) is False
+
+    def test_empty_string_treated_as_blank(self):
+        extracted = {"document_type": "tax_invoice", "vendor_name": "", "total_amount": "null", "bill_date": ""}
+        assert _is_ocr_blank(extracted) is True
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +274,28 @@ class TestExtract:
             result = await extract(b"fake_image_bytes", "image/jpeg")
 
         assert result.needs_review is True
+
+    async def test_all_null_result_sets_needs_manual_entry(self):
+        """Illegible handwritten bills (e.g. billsample3): both models return blank."""
+        blank = {
+            "document_type": "tax_invoice",
+            "vendor_name": None,
+            "total_amount": None,
+            "bill_date": None,
+        }
+        with patch("app.services.ocr_service._call_claude", new_callable=AsyncMock) as mock_call:
+            mock_call.side_effect = [(blank, 300, 50), (blank, 400, 60)]
+            result = await extract(b"fake_image_bytes", "image/jpeg")
+
+        assert result.needs_manual_entry is True
+        assert result.needs_review is True
+        assert "MANUAL_ENTRY_REQUIRED" in result.extracted.get("extraction_notes", "")
+
+    async def test_populated_result_does_not_set_needs_manual_entry(self, haiku_result):
+        with patch("app.services.ocr_service._call_claude", new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = (haiku_result, 500, 200)
+            result = await extract(b"fake_image_bytes", "image/jpeg")
+        assert result.needs_manual_entry is False
 
     async def test_extraction_result_includes_cost(self, haiku_result):
         with patch("app.services.ocr_service._call_claude", new_callable=AsyncMock) as mock_call:

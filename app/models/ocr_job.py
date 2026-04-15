@@ -16,7 +16,7 @@ class OcrJob(Base):
 
     # Job state
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
-    # pending | processing | completed | failed | needs_review
+    # pending | processing | completed | failed | needs_review | needs_manual_entry
     model_tier: Mapped[str] = mapped_column(String(20), nullable=False, default="haiku")
 
     # File info

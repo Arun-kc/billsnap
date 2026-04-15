@@ -55,6 +55,9 @@ class BillDetail(BillSummary):
     line_items: list[LineItemOut] = []
     created_at: datetime
     updated_at: datetime
+    # True when OCR failed to read the bill and the user must type it in manually
+    # (e.g. illegible handwritten bill). UI should render a manual-entry form.
+    needs_manual_entry: bool = False
 
 
 class BillUpdate(BaseModel):

@@ -143,6 +143,7 @@ async def get_bill(
 
     thumb_key = bill.ocr_job.thumbnail_key if bill.ocr_job else None
     orig_key = bill.ocr_job.original_file_key if bill.ocr_job else None
+    needs_manual_entry = bool(bill.ocr_job and bill.ocr_job.status == "needs_manual_entry")
 
     return BillDetail(
         id=bill.id,
@@ -175,6 +176,7 @@ async def get_bill(
         ],
         created_at=bill.created_at,
         updated_at=bill.updated_at,
+        needs_manual_entry=needs_manual_entry,
     )
 
 

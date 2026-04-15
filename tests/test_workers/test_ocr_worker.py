@@ -53,6 +53,7 @@ class TestProcessJob:
         }
         result.confidence = "high"
         result.needs_review = False
+        result.needs_manual_entry = False
         result.model_used = "claude-haiku-4-5-20251001"
         result.cost_inr = 0.05
         result.input_tokens = 1000
@@ -80,6 +81,7 @@ class TestProcessJob:
         result.extracted = {"vendor_name": None}
         result.confidence = "low"
         result.needs_review = True
+        result.needs_manual_entry = False
         result.model_used = "claude-haiku-4-5-20251001"
         result.cost_inr = 0.03
         result.input_tokens = 800
@@ -93,6 +95,30 @@ class TestProcessJob:
             await _process_job(job, db)
 
         assert job.status == "needs_review"
+
+    async def test_marks_job_needs_manual_entry_when_ocr_blank(self):
+        """Illegible bill: ocr_service flags needs_manual_entry, worker records status."""
+        db = make_mock_db()
+        job = make_ocr_job(status="pending")
+
+        result = MagicMock()
+        result.extracted = {"vendor_name": None, "total_amount": None, "bill_date": None}
+        result.confidence = "low"
+        result.needs_review = True
+        result.needs_manual_entry = True
+        result.model_used = "claude-sonnet-4-6"
+        result.cost_inr = 2.10
+        result.input_tokens = 900
+        result.output_tokens = 60
+
+        with patch("app.workers.ocr_worker.storage_service.download", return_value=b"fake_bytes"), \
+             patch("app.workers.ocr_worker.storage_service.upload_thumbnail", return_value="thumbs/t.jpg"), \
+             patch("app.workers.ocr_worker.ocr_service.extract", new_callable=AsyncMock) as mock_extract, \
+             patch("app.workers.ocr_worker.bill_service.create_from_ocr", new_callable=AsyncMock):
+            mock_extract.return_value = result
+            await _process_job(job, db)
+
+        assert job.status == "needs_manual_entry"
 
     async def test_marks_job_failed_on_exception(self):
         db = make_mock_db()

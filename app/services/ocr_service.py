@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 
 import anthropic
-from PIL import Image, ExifTags
+from PIL import Image, ExifTags, ImageFilter, ImageOps, ImageStat
 
 from ..config import settings
 
@@ -28,121 +28,107 @@ _MODEL_PRICING = {
 # Module-level async client (reuses HTTP connection)
 _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
-EXTRACTION_PROMPT = """You are extracting structured data from an Indian business document photo.
+_BASE_PROMPT = """You extract structured data from an Indian business document photo (bill, tax invoice, or credit/debit note).
+__OWNER_BLOCK__
+STEP 1 — Document type (DO THIS FIRST, before any field extraction):
+Scan the title/header for these exact phrases:
+- "Credit Note", "CDNR", "Cr. Note"   → document_type = "credit_note"
+- "Debit Note", "DBNR", "Dr. Note"    → document_type = "debit_note"
+- "Tax Invoice"                        → "tax_invoice"
+- "Bill of Supply"                     → "bill_of_supply"
+- Plain receipt                        → "receipt"
+Default: "tax_invoice". Ignore adjacent invoice references — the title at the TOP of the document decides the type.
 
-The photo was taken by a non-technical user on a smartphone and may be blurry, shaky, or low-light.
-Use every available inference strategy rather than giving up:
-- If a character is unclear, infer from context (₹X,XXX.XX price formats, GSTIN structure, column alignment)
-- Only return null for a field if it is truly absent from the document — prefer a best-guess with low confidence over null
+STEP 2 — Dates (errors here are common, ESPECIALLY on handwritten bills):
+Indian bills print/write dates as DD/MM/YY or DD/MM/YYYY. "20/01/26" means 20 January 2026. Year "26" = 2026, "25" = 2025.
+NEVER swap day and month. The FIRST group is always the day (1–31); the SECOND is the month (1–12). If you read month > 12, you swapped — undo and re-read.
+On handwritten dates, watch for these digit confusions: 0↔6, 1↔7, 2↔7, 5↔6, and "01" (January) vs "12" (December) — a "1" with a heavy serif or closed loop can look like "12".
+Return dates as YYYY-MM-DD.
 
-STEP 1 — Identify the document type:
-- "Tax Invoice" → "tax_invoice"
-- "Credit Note" / "Debit Note" → "credit_note" / "debit_note"
-- "Delivery Challan" → "delivery_challan"
-- "Bill of Supply" → "bill_of_supply"
-- Plain receipt → "receipt"
-Default: "tax_invoice"
+STEP 3 — GSTINs (15-char, format: [2-digit state][5 letters][4 digits][entity letter][Z][check]):
+- vendor_gstin = business ISSUING the bill (letterhead at top). Labelled "GSTIN", "GST No", "Supplier GSTIN".
+- buyer_gstin = business RECEIVING the bill. Labelled "Bill To", "Buyer", "Consignee", "Customer GSTIN".
+- PAN entity letter (char 6 of GSTIN, = 4th of PAN) on BUSINESS letterheads is almost always F (firm), C (company), H (HUF), A (AOP/association), T (trust), B (BOI), L (LLP), J (AJP), G (government). P (individual) is rare on printed GST invoices — if you read P on a letterhead, reconsider and prefer F.
+- Common OCR confusions: O↔Q, E↔F, B↔8, 0↔O, 1↔I, S↔5, 2↔Z. Apply the entity-letter rule to disambiguate.
+- State codes: Kerala=32, Tamil Nadu=33, Maharashtra=27, Karnataka=29, Delhi=07.
+- Never put the buyer GSTIN in vendor_gstin, or vice versa.
 
-STEP 2 — Find the VENDOR NAME (seller/supplier):
-Look at the TOP of the document — the business name is usually the largest text in the header or printed on the letterhead. It is NOT the buyer name. Common patterns: "M/s. XYZ Traders", "ABC Enterprises", "Sri Ganesh Stores".
+STEP 3.5 — Handwritten portions (apply EVERYWHERE a number appears, especially amounts and bill numbers):
+If any part of the bill is handwritten, read each digit SEPARATELY before combining. Common confusions on Indian handwriting: 0↔6, 1↔7, 2↔7, 3↔8, 5↔6, 8↔3. For amounts, verify the magnitude feels right for the line items (a 3-digit handwritten "108" with a tall "1" can look like "708"). NEVER return null on a handwritten bill if you can read the digits at all — return a best-guess even with low confidence; the user will review it.
 
-STEP 3 — Read amounts carefully:
-- Indian format uses commas as thousands separators: ₹1,23,456.78 = 123456.78
-- PRESERVE ALL DECIMAL DIGITS (paise). ₹1,234.50 → 1234.50 (never 1234). ₹850.00 → 850.00.
-- TOTAL AMOUNT = the FINAL payable figure after ALL taxes are added.
-  Look for these labels (in priority order): "Grand Total", "Invoice Total", "Total Amount", "Net Payable", "Amount Payable", "Net Amount", "Amount Due", "Balance Due", "Total"
-  If multiple "Total" rows exist, use the LAST / LARGEST one that includes all taxes.
-  Never use a subtotal or taxable amount as the total.
-- TAXABLE AMOUNT is the pre-tax subtotal (before CGST/SGST/IGST)
-- CGST + SGST are each half the GST; IGST replaces both for inter-state
-- SYMMETRY CHECK: For intra-state invoices, CGST always equals SGST exactly. Use one to verify or infer the other if one is unclear.
-- MATH VERIFICATION: taxable_amount + cgst_amount + sgst_amount + igst_amount should equal total_amount. Use this identity to infer a missing value when others are visible.
-- TAX SLAB: identify the GST rate applied — typically 5, 12, 18, or 28. Return "Mixed" if multiple rates appear on the same invoice. Return null if not determinable.
+STEP 4 — Amounts (Indian format: ₹1,23,456.78 = 123456.78):
+- PRESERVE all decimal digits (paise). ₹1,234.50 → 1234.50, never 1234.
+- total_amount = FINAL payable after ALL taxes. Labels (priority order): Grand Total, Invoice Total, Total Amount, Net Payable, Amount Payable, Net Amount. If multiple, use the LAST/LARGEST.
+- taxable_amount = pre-tax subtotal.
+- Intra-state: cgst_amount == sgst_amount EXACTLY. Use symmetry if one is unclear.
+- Math identity: taxable + cgst + sgst + igst ≈ total (allow ₹1 round-off).
 
-STEP 3.5 — WORD-FORM CROSS-CHECK (CRITICAL — prevents decimal/scale errors):
-Indian tax invoices ALWAYS print the total amount spelled out in words, usually below the numeric total.
-Common patterns: "Rupees Ten Thousand Two Hundred Only", "INR Four Thousand Nine Hundred Forty Four Only", "Amount in words: ...".
-The word form is the AUTHORITATIVE ground truth for magnitude because:
-- Words never have comma/period ambiguity (unlike "10,200.00" which can be misread at wrong scale)
-- Words are written once carefully; numeric columns may have visually confusing formatting (e.g. 3-decimal line items)
+STEP 5 — Word-form cross-check (MANDATORY):
+Indian bills spell the total in words ("Rupees Ten Thousand Two Hundred Only"). Transcribe the phrase verbatim into total_amount_in_words (or credit_amount_in_words). If your numeric reading disagrees in scale with the words, the WORDS WIN — overwrite and note it.
 
-MANDATORY procedure:
-1. Locate and read the amount-in-words phrase. Transcribe it verbatim into total_amount_in_words.
-2. Mentally parse the words to a number. Example: "Ten Thousand Two Hundred" = 10200.
-3. Compare to your numeric total_amount. If they disagree in magnitude (off by 10×, 100×, 1000×), the WORD form WINS — overwrite total_amount to match the words, and note this in extraction_notes.
-4. If the words say "Ten Thousand Two Hundred" but your numeric reading gave 10,200,000 — that's a 1000× scale error. Correct to 10200.00.
-5. Only keep the numeric reading if it agrees with the words (allowing for rounding/round-off of a few rupees).
-6. If no word-form is present, leave total_amount_in_words as null and rely on numeric reading alone.
+STEP 6 — Return JSON ONLY. No markdown, no prose.
 
-STEP 4 — Read handwritten portions digit-by-digit:
-Common confusion: 0↔O, 1↔I, 5↔S, 8↔B, 6↔G
-For amounts: read each digit individually, then reconstruct the number.
-
-STEP 5 — Identify GSTINs:
-Bills often show TWO GSTINs — always assign them to the correct party:
-- vendor_gstin = SELLER's GSTIN — the business that ISSUED this bill. Its name appears at the TOP/header of the document (letterhead). Usually labeled "GSTIN", "GST No", "Supplier GSTIN".
-- buyer_gstin = BUYER's GSTIN — the business that RECEIVED this bill. Usually labeled "Bill To", "Buyer", "Consignee", "Customer GSTIN", "Recipient GSTIN".
-- These are ALWAYS different values. Never put the buyer GSTIN in vendor_gstin.
-- Validate each: exactly 15 chars, pattern [2-digit state][10-char PAN][entity digit][Z][check digit]
-- State codes: Kerala=32, Tamil Nadu=33, Maharashtra=27, Karnataka=29, Delhi=07
-
-STEP 6 — Return JSON ONLY (no markdown, no explanation):
-
-For tax_invoice / bill_of_supply / receipt / delivery_challan:
+For tax_invoice / bill_of_supply / receipt:
 {
   "document_type": "tax_invoice",
-  "vendor_name": "Exact seller business name from header",
-  "vendor_gstin": "Seller's 15-char GSTIN or null",
-  "buyer_name": "Buyer name if shown or null",
-  "buyer_gstin": "Buyer's 15-char GSTIN or null",
-  "bill_number": "Invoice/receipt number or null",
+  "vendor_name": "seller business name from letterhead",
+  "vendor_gstin": "15-char or null",
+  "buyer_name": "... or null",
+  "buyer_gstin": "15-char or null",
+  "bill_number": "... or null",
   "bill_date": "YYYY-MM-DD or null",
   "total_amount": 1234.56,
-  "total_amount_in_words": "Rupees One Thousand Two Hundred Thirty Four and Fifty Six Paise Only, or null if not shown",
+  "total_amount_in_words": "Rupees ... Only, or null",
   "taxable_amount": 1000.00,
   "cgst_amount": 90.00,
   "sgst_amount": 90.00,
   "igst_amount": null,
-  "category": "electrical | materials | groceries | services | utilities | medical | transport | other",
-  "tax_slab": "5 | 12 | 18 | 28 | Mixed | null",
-  "line_items": [
-    { "description": "Item name", "hsn_code": "1234", "quantity": 2.0, "unit": "pcs", "unit_price": 500.00, "amount": 1000.00 }
-  ],
-  "field_confidence": { "vendor_name": "high", "vendor_gstin": "high", "total_amount": "high", "bill_date": "high" },
-  "extraction_confidence": "high | medium | low",
-  "extraction_notes": "Note anything unclear, handwritten, or missing",
-  "raw_text": "All visible text from the document in reading order"
+  "tax_slab": "5|12|18|28|Mixed|null",
+  "category": "electrical|materials|groceries|services|utilities|medical|transport|other",
+  "extraction_notes": "anything unclear (or null)"
 }
 
 For credit_note / debit_note:
 {
   "document_type": "credit_note",
-  "vendor_name": "Issuer business name",
-  "vendor_gstin": "Issuer GSTIN or null",
-  "document_number": "Credit/debit note number",
-  "document_date": "YYYY-MM-DD or null",
-  "original_invoice_number": "Invoice reference or null",
+  "vendor_name": "issuer business name",
+  "vendor_gstin": "15-char or null",
+  "buyer_gstin": "15-char or null",
+  "document_number": "...",
+  "document_date": "YYYY-MM-DD",
+  "original_invoice_number": "referenced invoice or null",
   "original_invoice_date": "YYYY-MM-DD or null",
   "credit_amount": 500.00,
-  "credit_amount_in_words": "Rupees Five Hundred Only, or null if not shown",
-  "cgst_amount": null,
-  "sgst_amount": null,
+  "credit_amount_in_words": "Rupees ... Only",
+  "taxable_amount": 420.00,
+  "cgst_amount": 40.00,
+  "sgst_amount": 40.00,
   "igst_amount": null,
-  "reason": "Reason if stated or null",
-  "category": "electrical | materials | groceries | services | utilities | medical | transport | other",
-  "field_confidence": { "vendor_name": "high", "credit_amount": "high" },
-  "extraction_confidence": "high | medium | low",
-  "extraction_notes": "Note anything unclear",
-  "raw_text": "All visible text from the document in reading order"
+  "tax_slab": "5|12|18|28|Mixed|null",
+  "category": "electrical|materials|groceries|services|utilities|medical|transport|other",
+  "extraction_notes": "anything unclear (or null)"
 }
 
-Rules:
-- Use null (not "null" string) for missing fields
-- Amounts must be numbers, never strings
-- NEVER round amounts — preserve exact paise (decimal places) as printed
-- extraction_confidence = "low" if vendor_name or total_amount is missing/unclear
-- Prefer a best-guess value (with low field_confidence) over null — only use null when the field is genuinely absent
-- raw_text must include all text visible in the image, in reading order (top to bottom, left to right)"""
+Rules: null (not the string "null"); amounts are numbers not strings; preserve paise; prefer a best-guess over null."""
+
+
+def _build_prompt(owner_gstin: str | None) -> str:
+    if owner_gstin:
+        owner = owner_gstin.strip().upper()
+        # Position-based guidance: the GSTIN on the TOP/letterhead is always the
+        # vendor, regardless of whether it's the owner's or not. This keeps sales
+        # bills (where owner == vendor) correct while still letting the model
+        # disambiguate purchase bills (where owner == buyer).
+        block = (
+            f"\nCONTEXT: The user's own GSTIN is `{owner}`. On a bill this user issued (a sales "
+            f"bill), `{owner}` appears on the TOP/letterhead as the vendor — put it in vendor_gstin. "
+            f"On a bill this user received (a purchase bill), `{owner}` appears next to 'Bill To' / "
+            f"'Buyer' — put it in buyer_gstin. ALWAYS decide based on WHERE on the bill you see the "
+            f"GSTIN, never assume. Read the top letterhead to find the real vendor_gstin.\n"
+        )
+    else:
+        block = "\n"
+    return _BASE_PROMPT.replace("__OWNER_BLOCK__", block.strip("\n"))
 
 
 @dataclass
@@ -154,6 +140,24 @@ class ExtractionResult:
     cost_inr: float
     confidence: str = "high"
     needs_review: bool = False
+    needs_manual_entry: bool = False
+
+
+_CRITICAL_FIELDS_TAX_INVOICE = ("vendor_name", "total_amount", "bill_date")
+_CRITICAL_FIELDS_CREDIT_NOTE = ("vendor_name", "credit_amount", "document_date")
+
+
+def _is_ocr_blank(extracted: dict) -> bool:
+    """Return True when even Sonnet couldn't read the critical fields off the bill.
+
+    "Blank" means every one of the 3 critical fields (vendor + amount + date) is
+    null/empty. Hit primarily by illegible handwritten bills — billsample3 in
+    the eval set is the canonical example. Lets the UI route these to a manual-
+    entry form rather than show an empty "review" screen that frustrates users.
+    """
+    doc_type = (extracted.get("document_type") or "").lower()
+    fields = _CRITICAL_FIELDS_CREDIT_NOTE if doc_type in ("credit_note", "debit_note") else _CRITICAL_FIELDS_TAX_INVOICE
+    return all(extracted.get(f) in (None, "", "null") for f in fields)
 
 
 def _fix_orientation(image_bytes: bytes) -> bytes:
@@ -198,6 +202,53 @@ def _fix_orientation(image_bytes: bytes) -> bytes:
 
     except Exception:
         # If anything goes wrong, return original bytes unchanged
+        return image_bytes
+
+
+_MAX_IMAGE_DIM = 1600
+
+
+def _downscale_image(image_bytes: bytes, max_dim: int = _MAX_IMAGE_DIM) -> bytes:
+    """Resize so the long edge is <= max_dim. Cuts input tokens ~3-4x on phone photos."""
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        w, h = img.size
+        longest = max(w, h)
+        if longest <= max_dim:
+            return image_bytes
+        scale = max_dim / longest
+        new_size = (int(w * scale), int(h * scale))
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        resized = img.resize(new_size, Image.LANCZOS)
+        buf = io.BytesIO()
+        resized.save(buf, format="JPEG", quality=90)
+        return buf.getvalue()
+    except Exception:
+        return image_bytes
+
+
+def _enhance_for_ocr(image_bytes: bytes) -> bytes:
+    """Enhance handwritten / low-contrast bills.
+
+    When the image has low tonal spread (std-dev < 55 on an L-channel), apply
+    PIL autocontrast + a mild unsharp mask to make handwritten strokes pop.
+    Printed bills with good contrast pass through unchanged.
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        stat = ImageStat.Stat(img.convert("L"))
+        stddev = stat.stddev[0] if stat.stddev else 0
+        if stddev >= 55:
+            return image_bytes  # already crisp; don't touch
+        enhanced = ImageOps.autocontrast(img, cutoff=1)
+        enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=1.5, percent=120, threshold=3))
+        buf = io.BytesIO()
+        enhanced.save(buf, format="JPEG", quality=92)
+        return buf.getvalue()
+    except Exception:
         return image_bytes
 
 
@@ -303,31 +354,38 @@ def _cost_inr(model: str, input_tokens: int, output_tokens: int) -> float:
     return round(cost_usd * 84, 4)
 
 
-def _needs_sonnet_retry(extracted: dict, confidence_threshold: float) -> bool:
-    confidence_map = {"high": 1.0, "medium": 0.6, "low": 0.3}
-    confidence_str = extracted.get("extraction_confidence", "high")
-    confidence = confidence_map.get(confidence_str, 1.0)
-    if confidence < confidence_threshold:
-        return True
-    # Always retry if vendor name is missing or suspicious
+def _needs_sonnet_retry(extracted: dict, owner_gstin: str | None = None) -> bool:
+    """Structural gate: retry Sonnet only when extraction is objectively broken.
+
+    Self-reported "medium" confidence alone is NOT enough — Haiku over-reports
+    medium, which caused 5/8 bills to trigger fallback in the baseline. Retry only
+    when a required field is null/invalid, the word-form disagrees with the total,
+    or the vendor_gstin is the OWNER's GSTIN (model echoed the prompt hint).
+    """
     vendor = extracted.get("vendor_name") or ""
     if not vendor or len(vendor) < 3 or vendor.lower() in ("unknown", "null", "n/a"):
         return True
-    # Always retry if total amount is missing — it's the most critical field
-    total = extracted.get("total_amount")
-    if total is None or total in ("null", ""):
+
+    # Credit/debit notes use credit_amount; tax_invoice et al. use total_amount.
+    doc_type = (extracted.get("document_type") or "").lower()
+    amount_key = "credit_amount" if doc_type in ("credit_note", "debit_note") else "total_amount"
+    amount = extracted.get(amount_key)
+    if amount in (None, "", "null"):
         return True
-    # Retry if amount-in-words disagrees with numeric total (scale/decimal error)
+
+    vendor_gstin = extracted.get("vendor_gstin")
+    if vendor_gstin and not _is_valid_gstin(vendor_gstin):
+        return True
+
+    # Guard against the model echoing the owner GSTIN straight into vendor_gstin.
+    # Observed on 3/8 bills in the Stage 1 first pass.
+    if owner_gstin and vendor_gstin:
+        if vendor_gstin.strip().upper() == owner_gstin.strip().upper():
+            return True
+
     if _words_disagree_with_numeric(extracted):
         return True
-    # Retry if GSTIN looks invalid and tax amounts are missing
-    if confidence_str == "medium":
-        gstin_invalid = not _is_valid_gstin(extracted.get("vendor_gstin"))
-        tax_missing = all(
-            extracted.get(k) in (None, "null", "")
-            for k in ("cgst_amount", "sgst_amount", "igst_amount")
-        )
-        return gstin_invalid or tax_missing
+
     return False
 
 
@@ -345,7 +403,9 @@ def _parse_json_response(raw: str) -> dict:
         return {"_parse_error": raw, "extraction_confidence": "low"}
 
 
-async def _call_claude(image_bytes: bytes, content_type: str, model: str) -> tuple[dict, int, int]:
+async def _call_claude(
+    image_bytes: bytes, content_type: str, model: str, prompt: str
+) -> tuple[dict, int, int]:
     """Call Claude vision and return (extracted_dict, input_tokens, output_tokens)."""
     image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
 
@@ -359,7 +419,7 @@ async def _call_claude(image_bytes: bytes, content_type: str, model: str) -> tup
 
     message = await _client.messages.create(
         model=model,
-        max_tokens=3072,
+        max_tokens=1200,
         messages=[
             {
                 "role": "user",
@@ -368,7 +428,7 @@ async def _call_claude(image_bytes: bytes, content_type: str, model: str) -> tup
                         "type": "image",
                         "source": {"type": "base64", "media_type": media_type, "data": image_data},
                     },
-                    {"type": "text", "text": EXTRACTION_PROMPT},
+                    {"type": "text", "text": prompt},
                 ],
             }
         ],
@@ -377,26 +437,35 @@ async def _call_claude(image_bytes: bytes, content_type: str, model: str) -> tup
     return extracted, message.usage.input_tokens, message.usage.output_tokens
 
 
-async def extract(image_bytes: bytes, content_type: str) -> ExtractionResult:
-    """
-    Extract GST fields from a bill image.
+async def extract(
+    image_bytes: bytes,
+    content_type: str,
+    owner_gstin: str | None = None,
+) -> ExtractionResult:
+    """Extract GST fields from a bill image.
+
     1. Fixes EXIF orientation so mobile photos are right-side up.
     2. Tries Haiku first for cost efficiency.
-    3. Retries with Sonnet if confidence is low or key fields are missing.
-    """
-    # Fix mobile photo orientation before sending to Claude
-    image_bytes = _fix_orientation(image_bytes)
+    3. Retries with Sonnet only on structural failure (missing/invalid required field).
 
-    threshold = settings.ocr_confidence_threshold
+    ``owner_gstin`` — if provided, is injected into the prompt so the model places
+    the user's own GSTIN in buyer_gstin rather than confusing it with the vendor.
+    """
+    image_bytes = _fix_orientation(image_bytes)
+    image_bytes = _downscale_image(image_bytes)
+    image_bytes = _enhance_for_ocr(image_bytes)
+    prompt = _build_prompt(owner_gstin)
 
     # First pass — Haiku
-    extracted, in_tok, out_tok = await _call_claude(image_bytes, content_type, HAIKU_MODEL)
+    extracted, in_tok, out_tok = await _call_claude(image_bytes, content_type, HAIKU_MODEL, prompt)
     model_used = HAIKU_MODEL
     in_tok2, out_tok2 = 0, 0
 
-    # Sonnet fallback
-    if _needs_sonnet_retry(extracted, threshold):
-        extracted2, in_tok2, out_tok2 = await _call_claude(image_bytes, content_type, SONNET_MODEL)
+    # Sonnet fallback (structural only)
+    if _needs_sonnet_retry(extracted, owner_gstin):
+        extracted2, in_tok2, out_tok2 = await _call_claude(
+            image_bytes, content_type, SONNET_MODEL, prompt
+        )
         conf2 = extracted2.get("extraction_confidence", "low")
         conf1 = extracted.get("extraction_confidence", "low")
         conf_rank = {"high": 2, "medium": 1, "low": 0}
@@ -430,10 +499,23 @@ async def extract(image_bytes: bytes, content_type: str) -> ExtractionResult:
     if model_used == SONNET_MODEL:
         cost_inr += _cost_inr(SONNET_MODEL, in_tok2, out_tok2)
 
+    # Manual-entry cohort: both models failed to read vendor + amount + date.
+    # Surface this so the UI can show an "OCR couldn't read this — please type it in"
+    # state instead of an empty review form.
+    needs_manual_entry = _is_ocr_blank(extracted)
+    if needs_manual_entry:
+        note = extracted.get("extraction_notes") or ""
+        extracted["extraction_notes"] = (
+            (note + " | " if note else "")
+            + "MANUAL_ENTRY_REQUIRED: OCR could not read the key fields; user must enter manually."
+        )
+
     # Flag for review if medium or low confidence, if critical fields are empty, or if we had to correct via words
     vendor_ok = bool(extracted.get("vendor_name") and len(extracted.get("vendor_name", "")) >= 3)
     amount_ok = extracted.get("total_amount") not in (None, "null", "")
-    needs_review = confidence in ("low", "medium") or not vendor_ok or not amount_ok or words_corrected
+    needs_review = (
+        confidence in ("low", "medium") or not vendor_ok or not amount_ok or words_corrected
+    )
 
     return ExtractionResult(
         extracted=extracted,
@@ -443,4 +525,5 @@ async def extract(image_bytes: bytes, content_type: str) -> ExtractionResult:
         cost_inr=cost_inr,
         confidence=confidence,
         needs_review=needs_review,
+        needs_manual_entry=needs_manual_entry,
     )
