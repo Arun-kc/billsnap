@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ..dependencies import get_current_user, get_db
 from ..models.ocr_job import OcrJob
@@ -19,7 +20,9 @@ async def get_job_status(
     current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(OcrJob).where(OcrJob.id == job_id, OcrJob.user_id == current_user.id)
+        select(OcrJob)
+        .options(selectinload(OcrJob.bill))
+        .where(OcrJob.id == job_id, OcrJob.user_id == current_user.id)
     )
     job = result.scalar_one_or_none()
     if not job:

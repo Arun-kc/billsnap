@@ -1,8 +1,9 @@
 import asyncio
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .config import settings
 from .routers import bills, dashboard, jobs, waitlist
@@ -30,6 +31,12 @@ app.include_router(bills.router)
 app.include_router(jobs.router)
 app.include_router(dashboard.router)
 app.include_router(waitlist.router)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 _worker_task: asyncio.Task | None = None
 

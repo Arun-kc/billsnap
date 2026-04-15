@@ -96,7 +96,7 @@ async def get_bill(db: AsyncSession, bill_id: uuid.UUID) -> Bill | None:
     result = await db.execute(
         select(Bill)
         .where(Bill.id == bill_id)
-        .options(selectinload(Bill.line_items))
+        .options(selectinload(Bill.line_items), selectinload(Bill.ocr_job))
     )
     return result.scalar_one_or_none()
 
@@ -110,7 +110,7 @@ async def list_bills(
     page: int = 1,
     per_page: int = 20,
 ) -> tuple[list[Bill], int, dict]:
-    q = select(Bill).where(Bill.user_id == user_id)
+    q = select(Bill).where(Bill.user_id == user_id).options(selectinload(Bill.ocr_job))
 
     if month:
         try:
