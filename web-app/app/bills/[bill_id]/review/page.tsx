@@ -2,13 +2,17 @@
 
 import { useEffect, useState, use, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Image from "next/image";
 import { getBill, updateBill, type BillDetail } from "@/lib/api";
 import { formatAmount, parseAmount } from "@/lib/currency";
 import CategoryPicker from "@/components/review/CategoryPicker";
 import DatePicker, { formatForDisplay } from "@/components/review/DatePicker";
 import TaxBreakdownGroup from "@/components/review/TaxBreakdownGroup";
+import ImagePeekButton from "@/components/review/ImagePeekButton";
+import LineItemsSection from "@/components/review/LineItemsSection";
+import LineItemsEditor, { type DraftLineItem } from "@/components/review/LineItemsEditor";
+import { labels } from "@/lib/i18n/labels";
 import StickyFooter from "@/components/ui/StickyFooter";
+import Toast, { type ToastVariant } from "@/components/ui/Toast";
 
 const DOCUMENT_TYPES = [
   { value: "tax_invoice", label: "Tax Invoice" },
@@ -32,17 +36,34 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 function Field({
   label,
+  ml,
   lowConfidence = false,
   children,
 }: {
   label: string;
+  ml?: string;
   lowConfidence?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div
+      className={`flex flex-col gap-1.5 ${
+        lowConfidence
+          ? "rounded-2xl ring-2 ring-[var(--color-gold)] ring-opacity-60 p-2 -m-2 bg-[var(--color-gold-bg,#fffbeb)]"
+          : ""
+      }`}
+    >
       <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-muted)]">
-        {label}
+        <span>{label}</span>
+        {ml && (
+          <span
+            className="text-[11px] font-normal opacity-70"
+            lang="ml"
+            style={{ fontFamily: "'Noto Sans Malayalam', sans-serif" }}
+          >
+            · {ml}
+          </span>
+        )}
         {lowConfidence && (
           <span
             className="text-xs font-medium px-1.5 py-0.5 rounded-full"
@@ -71,9 +92,13 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
   const [bill, setBill] = useState<BillDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ message: string; variant: ToastVariant } | null>(null);
   const [showMore, setShowMore] = useState(false);
   const [catOpen, setCatOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
+  const [itemsOpen, setItemsOpen] = useState(false);
+  const [lineItems, setLineItems] = useState<DraftLineItem[]>([]);
+  const [lineItemsDirty, setLineItemsDirty] = useState(false);
 
   const [vendorName, setVendorName] = useState("");
   const [billDate, setBillDate] = useState<string | undefined>(undefined);
@@ -108,17 +133,25 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
         setSgstAmount(b.sgst_amount ?? 0);
         setIgstAmount(b.igst_amount ?? 0);
         setNotes(b.user_notes ?? "");
+        setLineItems(
+          (b.line_items ?? []).map((li) => ({
+            item_name: li.item_name,
+            quantity: li.quantity,
+            unit_price: li.unit_price,
+            total_price: li.total_price,
+          }))
+        );
       })
       .catch(() => {/* treat as blank */})
       .finally(() => setLoading(false));
   }, [bill_id]);
 
+  const lowConfidenceOverall =
+    typeof bill?.extraction_confidence === "number" && bill.extraction_confidence < 0.70;
+
   const isLowConf = (field: string) => {
-    if (!bill?.extraction_confidence) return false;
-    if (bill.extraction_confidence < 0.50) {
-      return ["vendor_name", "total_amount", "vendor_gstin", "bill_date"].includes(field);
-    }
-    return false;
+    if (!lowConfidenceOverall) return false;
+    return ["vendor_name", "total_amount", "vendor_gstin", "bill_date"].includes(field);
   };
 
   const handleSave = async () => {
@@ -139,11 +172,26 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
           igst_amount: igstAmount,
           user_notes: notes || undefined,
           is_verified: true,
+          ...(lineItemsDirty
+            ? {
+                line_items: lineItems.map((li, i) => ({
+                  item_name: li.item_name,
+                  quantity: li.quantity,
+                  unit_price: li.unit_price,
+                  total_price: li.total_price,
+                  sort_order: i,
+                })),
+              }
+            : {}),
         });
         router.replace(`/bills/${bill_id}/done`);
       }
     } catch {
       setSaving(false);
+      setToast({
+        message: "Couldn't save. Tap ശരി to try again.",
+        variant: "error",
+      });
     }
   };
 
@@ -192,29 +240,20 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
           </div>
         )}
 
-        {/* ── Bill thumbnail ── */}
-        {bill?.thumbnail_url && (
+        {/* Low-confidence guidance */}
+        {!ocrFailed && lowConfidenceOverall && (
           <div
-            className="flex items-center gap-4 p-4 rounded-2xl bg-white border border-[var(--color-border)]"
+            className="rounded-2xl p-4 text-sm flex gap-3 items-start border"
+            style={{
+              background: "var(--color-gold-bg, #fffbeb)",
+              borderColor: "var(--color-gold)",
+              color: "#7a5a00",
+            }}
           >
-            <div className="relative w-[56px] h-[72px] rounded-xl overflow-hidden flex-shrink-0 bg-[var(--color-surface-2)]">
-              <Image
-                src={bill.thumbnail_url}
-                alt="Bill photo"
-                fill
-                className="object-cover"
-                sizes="56px"
-              />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <p className="text-xs text-[var(--color-text-muted)] font-medium">Bill photo</p>
-              <p className="text-sm font-semibold text-[var(--color-text)] leading-snug">
-                {vendorName || "—"}
-              </p>
-              {billDate && (
-                <p className="text-xs text-[var(--color-text-muted)]">{formatForDisplay(billDate)}</p>
-              )}
-            </div>
+            <span className="text-lg leading-none mt-0.5" aria-hidden="true">💡</span>
+            <p>
+              We weren&apos;t sure about a few things. Please double-check the highlighted boxes below.
+            </p>
           </div>
         )}
 
@@ -222,7 +261,7 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
         <div className="flex flex-col gap-4">
           <SectionLabel>Key details</SectionLabel>
 
-          <Field label="Vendor / Shop name" lowConfidence={isLowConf("vendor_name")}>
+          <Field label={labels.vendor.en} ml={labels.vendor.ml} lowConfidence={isLowConf("vendor_name")}>
             <input
               type="text"
               className={inputClass}
@@ -233,8 +272,18 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
             />
           </Field>
 
+          <Field label={labels.billNumber.en} ml={labels.billNumber.ml}>
+            <input
+              type="text"
+              className={inputClass}
+              value={billNumber}
+              onChange={(e) => setBillNumber(e.target.value)}
+              placeholder="e.g. INV-2026-042"
+            />
+          </Field>
+
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Date" lowConfidence={isLowConf("bill_date")}>
+            <Field label={labels.date.en} ml={labels.date.ml} lowConfidence={isLowConf("bill_date")}>
               <button
                 type="button"
                 onClick={() => setDateOpen(true)}
@@ -248,22 +297,37 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
               </button>
             </Field>
 
-            <Field label="Category">
-              <button
-                type="button"
-                onClick={() => setCatOpen(true)}
-                className={`${inputClass} flex items-center justify-between text-left`}
+            <Field label={labels.docType.en} ml={labels.docType.ml}>
+              <select
+                className={inputClass}
                 style={{ fontSize: "var(--text-sm)" }}
+                value={documentType}
+                onChange={(e) => setDocumentType(e.target.value)}
               >
-                <span className={category ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}>
-                  {category ? category.charAt(0).toUpperCase() + category.slice(1) : "Category"}
-                </span>
-                <span className="text-[var(--color-text-muted)] text-xs">▼</span>
-              </button>
+                {DOCUMENT_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
             </Field>
           </div>
 
-          <Field label="Total amount (₹)" lowConfidence={isLowConf("total_amount")}>
+          <Field label={labels.category.en} ml={labels.category.ml}>
+            <button
+              type="button"
+              onClick={() => setCatOpen(true)}
+              className={`${inputClass} flex items-center justify-between text-left`}
+              style={{ fontSize: "var(--text-sm)" }}
+            >
+              <span className={category ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}>
+                {category ? category.charAt(0).toUpperCase() + category.slice(1) : "Category"}
+              </span>
+              <span className="text-[var(--color-text-muted)] text-xs">▼</span>
+            </button>
+          </Field>
+
+          <Field label={labels.total.en} ml={labels.total.ml} lowConfidence={isLowConf("total_amount")}>
             <div className="relative">
               <span
                 className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-[var(--color-text-muted)]"
@@ -284,6 +348,9 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
           </Field>
         </div>
 
+        {/* ── Line items ── */}
+        <LineItemsSection items={lineItems} onEdit={() => setItemsOpen(true)} />
+
         {/* ── More details (collapsible) ── */}
         <div
           className="rounded-2xl overflow-hidden border border-[var(--color-border)] bg-white"
@@ -293,37 +360,13 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
             onClick={() => setShowMore((v) => !v)}
             className="w-full flex items-center justify-between px-4 py-3.5 text-sm font-semibold text-[var(--color-aubergine)] min-h-[44px]"
           >
-            <span>More details (GSTIN, bill number, taxes)</span>
+            <span>More details (GSTIN, taxes, notes)</span>
             <span className="text-xs">{showMore ? "▲" : "▼"}</span>
           </button>
 
           {showMore && (
             <div className="flex flex-col gap-4 px-4 pb-4 pt-1 animate-slide-up border-t border-[var(--color-border)]">
-              <Field label="Bill / Invoice number">
-                <input
-                  type="text"
-                  className={inputClass}
-                  value={billNumber}
-                  onChange={(e) => setBillNumber(e.target.value)}
-                  placeholder="e.g. INV-2026-042"
-                />
-              </Field>
-
-              <Field label="Document type">
-                <select
-                  className={inputClass}
-                  value={documentType}
-                  onChange={(e) => setDocumentType(e.target.value)}
-                >
-                  {DOCUMENT_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Vendor GSTIN" lowConfidence={isLowConf("vendor_gstin")}>
+              <Field label={labels.gstin.en} ml={labels.gstin.ml} lowConfidence={isLowConf("vendor_gstin")}>
                 <input
                   type="text"
                   className={`${inputClass} uppercase tracking-widest`}
@@ -346,7 +389,7 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
                 onChangeIgst={setIgstAmount}
               />
 
-              <Field label="Notes (optional)">
+              <Field label={labels.notes.en} ml={labels.notes.ml}>
                 <textarea
                   className={`${inputClass} h-20 py-3 resize-none`}
                   value={notes}
@@ -358,6 +401,12 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
           )}
         </div>
       </div>
+
+      {/* ── Floating image peek ── */}
+      <ImagePeekButton
+        thumbnailUrl={bill?.thumbnail_url}
+        imageUrl={bill?.image_url}
+      />
 
       {/* ── Sticky CTA ── */}
       <StickyFooter>
@@ -394,6 +443,23 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
         open={dateOpen}
         onClose={() => setDateOpen(false)}
       />
+      <LineItemsEditor
+        open={itemsOpen}
+        onClose={() => setItemsOpen(false)}
+        initialItems={lineItems}
+        onSave={(next) => {
+          setLineItems(next);
+          setLineItemsDirty(true);
+        }}
+      />
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          variant={toast.variant}
+          onDismiss={() => setToast(null)}
+        />
+      )}
     </main>
   );
 }
