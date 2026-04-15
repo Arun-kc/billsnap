@@ -35,3 +35,18 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Claude Code — local project settings and worktrees
+.claude/
+.claudeignore
+
+# Python — type checker and linter caches
+.mypy_cache/
+.ruff_cache/
+
+# Test coverage artifacts
+.coverage
+htmlcov/
+
+# Logs
+*.log
