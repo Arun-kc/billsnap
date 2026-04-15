@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { getBill, updateBill, type BillDetail } from "@/lib/api";
@@ -49,12 +49,7 @@ function FieldWrapper({
 const inputClass =
   "w-full h-12 rounded-xl border border-[var(--color-border)] px-4 bg-white text-[var(--color-text)] focus:outline-none focus:border-[var(--color-aubergine)] transition-colors";
 
-export default function ReviewPage({
-  params,
-}: {
-  params: Promise<{ bill_id: string }>;
-}) {
-  const { bill_id } = use(params);
+function ReviewContent({ bill_id }: { bill_id: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const ocrFailed = searchParams.get("error") === "ocr_failed";
@@ -347,5 +342,18 @@ export default function ReviewPage({
         onClose={() => setDateOpen(false)}
       />
     </main>
+  );
+}
+
+export default function ReviewPage({
+  params,
+}: {
+  params: Promise<{ bill_id: string }>;
+}) {
+  const { bill_id } = use(params);
+  return (
+    <Suspense fallback={<div className="min-h-dvh flex items-center justify-center text-[var(--color-text-muted)]">Loading…</div>}>
+      <ReviewContent bill_id={bill_id} />
+    </Suspense>
   );
 }

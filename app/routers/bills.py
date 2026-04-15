@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..dependencies import get_current_user, get_db
+from ..dependencies import get_current_user, get_current_user_flexible, get_db
 from ..models.user import User
 from ..models.ocr_job import OcrJob
 from ..schemas.bill import BillDetail, BillListOut, BillSummary, BillUpdate, MonthlySummary, PaginationOut
@@ -110,7 +110,7 @@ async def export_bills(
     month: str = Query(..., description="Month to export, e.g. 2026-04"),
     format: str = Query("csv", pattern="^(csv|xlsx)$"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_flexible),
 ):
     from fastapi.responses import Response
     from ..services import export_service
