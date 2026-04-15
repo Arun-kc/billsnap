@@ -54,85 +54,121 @@ CREDIT_NOTE_FIELDS = [
 HAIKU_MODEL  = "claude-haiku-4-5-20251001"
 SONNET_MODEL = "claude-sonnet-4-6"
 
-EXTRACTION_PROMPT = """You are extracting structured data from an Indian business document (tax invoice, credit note, delivery challan, or bill of supply).
+EXTRACTION_PROMPT = """You are extracting structured data from an Indian business document photo.
+
+The photo was taken by a non-technical user on a smartphone and may be blurry, shaky, or low-light.
+Use every available inference strategy rather than giving up:
+- If a character is unclear, infer from context (₹X,XXX.XX price formats, GSTIN structure, column alignment)
+- Only return null for a field if it is truly absent from the document — prefer a best-guess with low confidence over null
 
 STEP 1 — Identify the document type:
-Look for these labels at the top of the document:
-- "Tax Invoice" → type = "tax_invoice"
-- "Credit Note" or "Debit Note" → type = "credit_note"
-- "Delivery Challan" → type = "delivery_challan"
-- "Bill of Supply" → type = "bill_of_supply"
-If unclear, use "tax_invoice" as default.
+- "Tax Invoice" → "tax_invoice"
+- "Credit Note" / "Debit Note" → "credit_note" / "debit_note"
+- "Delivery Challan" → "delivery_challan"
+- "Bill of Supply" → "bill_of_supply"
+- Plain receipt → "receipt"
+Default: "tax_invoice"
 
-STEP 2 — Read handwritten portions carefully:
-Some fields (quantities, amounts, dates) may be handwritten. Read digit-by-digit.
-Common confusion: 0 vs O, 1 vs I, 5 vs S, 8 vs B. Context and surrounding printed text help.
+STEP 2 — Find the VENDOR NAME (seller/supplier):
+Look at the TOP of the document — the business name is usually the largest text in the header or printed on the letterhead. It is NOT the buyer name. Common patterns: "M/s. XYZ Traders", "ABC Enterprises", "Sri Ganesh Stores".
 
-STEP 3 — Extract and validate the GSTIN:
-A valid Indian GSTIN is exactly 15 characters: [2-digit state code][10-char PAN][1-digit entity number][Z][1 check digit].
-State code 32 = Kerala. State code 33 = Tamil Nadu. State code 27 = Maharashtra.
-If you see a 15-character alphanumeric string near "GSTIN" or "GST No", that is it — read it carefully.
+STEP 3 — Read amounts carefully:
+- Indian format uses commas as thousands separators: ₹1,23,456.78 = 123456.78
+- PRESERVE ALL DECIMAL DIGITS (paise). ₹1,234.50 → 1234.50 (never 1234). ₹850.00 → 850.00.
+- TOTAL AMOUNT = the FINAL payable figure after ALL taxes are added.
+  Look for these labels (in priority order): "Grand Total", "Invoice Total", "Total Amount", "Net Payable", "Amount Payable", "Net Amount", "Amount Due", "Balance Due", "Total"
+  If multiple "Total" rows exist, use the LAST / LARGEST one that includes all taxes.
+  Never use a subtotal or taxable amount as the total.
+- TAXABLE AMOUNT is the pre-tax subtotal (before CGST/SGST/IGST)
+- CGST + SGST are each half the GST; IGST replaces both for inter-state
+- SYMMETRY CHECK: For intra-state invoices, CGST always equals SGST exactly. Use one to verify or infer the other if one is unclear.
+- MATH VERIFICATION: taxable_amount + cgst_amount + sgst_amount + igst_amount should equal total_amount. Use this identity to infer a missing value when others are visible.
+- TAX SLAB: identify the GST rate applied — typically 5, 12, 18, or 28. Return "Mixed" if multiple rates appear on the same invoice. Return null if not determinable.
 
-STEP 4 — Extract fields based on document type.
+STEP 3.5 — WORD-FORM CROSS-CHECK (CRITICAL — prevents decimal/scale errors):
+Indian tax invoices ALWAYS print the total amount spelled out in words, usually below the numeric total.
+Common patterns: "Rupees Ten Thousand Two Hundred Only", "INR Four Thousand Nine Hundred Forty Four Only", "Amount in words: ...".
+The word form is the AUTHORITATIVE ground truth for magnitude because:
+- Words never have comma/period ambiguity (unlike "10,200.00" which can be misread at wrong scale)
+- Words are written once carefully; numeric columns may have visually confusing formatting (e.g. 3-decimal line items)
 
-For tax_invoice, bill_of_supply, delivery_challan:
+MANDATORY procedure:
+1. Locate and read the amount-in-words phrase. Transcribe it verbatim into total_amount_in_words.
+2. Mentally parse the words to a number. Example: "Ten Thousand Two Hundred" = 10200.
+3. Compare to your numeric total_amount. If they disagree in magnitude (off by 10×, 100×, 1000×), the WORD form WINS — overwrite total_amount to match the words, and note this in extraction_notes.
+4. If the words say "Ten Thousand Two Hundred" but your numeric reading gave 10,200,000 — that's a 1000× scale error. Correct to 10200.00.
+5. Only keep the numeric reading if it agrees with the words (allowing for rounding/round-off of a few rupees).
+6. If no word-form is present, leave total_amount_in_words as null and rely on numeric reading alone.
+
+STEP 4 — Read handwritten portions digit-by-digit:
+Common confusion: 0↔O, 1↔I, 5↔S, 8↔B, 6↔G
+For amounts: read each digit individually, then reconstruct the number.
+
+STEP 5 — Identify GSTINs:
+Bills often show TWO GSTINs — always assign them to the correct party:
+- vendor_gstin = SELLER's GSTIN — the business that ISSUED this bill. Its name appears at the TOP/header of the document (letterhead). Usually labeled "GSTIN", "GST No", "Supplier GSTIN".
+- buyer_gstin = BUYER's GSTIN — the business that RECEIVED this bill. Usually labeled "Bill To", "Buyer", "Consignee", "Customer GSTIN", "Recipient GSTIN".
+- These are ALWAYS different values. Never put the buyer GSTIN in vendor_gstin.
+- Validate each: exactly 15 chars, pattern [2-digit state][10-char PAN][entity digit][Z][check digit]
+- State codes: Kerala=32, Tamil Nadu=33, Maharashtra=27, Karnataka=29, Delhi=07
+
+STEP 6 — Return JSON ONLY (no markdown, no explanation):
+
+For tax_invoice / bill_of_supply / receipt / delivery_challan:
 {
   "document_type": "tax_invoice",
-  "vendor_name": "Name of the seller/issuer",
-  "vendor_gstin": "Seller GSTIN (exactly 15 chars)",
-  "buyer_name": "Name of the buyer if present",
-  "buyer_gstin": "Buyer GSTIN if present",
-  "bill_number": "Invoice or bill number",
-  "bill_date": "Date in YYYY-MM-DD format",
-  "total_amount": "Final total in rupees (numeric only)",
-  "taxable_amount": "Pre-tax subtotal if shown (numeric only)",
-  "cgst_amount": "CGST amount if present (numeric only, null if IGST is used instead)",
-  "sgst_amount": "SGST amount if present (numeric only, null if IGST is used instead)",
-  "igst_amount": "IGST amount if present (numeric only, null if CGST/SGST are used instead)",
-  "category": "One of: electrical, materials, groceries, services, utilities, medical, transport, other",
+  "vendor_name": "Exact seller business name from header",
+  "vendor_gstin": "Seller's 15-char GSTIN or null",
+  "buyer_name": "Buyer name if shown or null",
+  "buyer_gstin": "Buyer's 15-char GSTIN or null",
+  "bill_number": "Invoice/receipt number or null",
+  "bill_date": "YYYY-MM-DD or null",
+  "total_amount": 1234.56,
+  "total_amount_in_words": "Rupees One Thousand Two Hundred Thirty Four and Fifty Six Paise Only, or null if not shown",
+  "taxable_amount": 1000.00,
+  "cgst_amount": 90.00,
+  "sgst_amount": 90.00,
+  "igst_amount": null,
+  "category": "electrical | materials | groceries | services | utilities | medical | transport | other",
+  "tax_slab": "5 | 12 | 18 | 28 | Mixed | null",
   "line_items": [
-    {
-      "description": "Item name",
-      "hsn_code": "HSN/SAC code if present",
-      "quantity": "Numeric quantity",
-      "unit_price": "Price per unit",
-      "amount": "Line total"
-    }
+    { "description": "Item name", "hsn_code": "1234", "quantity": 2.0, "unit": "pcs", "unit_price": 500.00, "amount": 1000.00 }
   ],
-  "field_confidence": {
-    "vendor_gstin": "high/medium/low",
-    "total_amount": "high/medium/low",
-    "tax_amounts": "high/medium/low"
-  },
-  "extraction_confidence": "high/medium/low",
-  "extraction_notes": "Brief note on anything unclear or handwritten"
+  "field_confidence": { "vendor_name": "high", "vendor_gstin": "high", "total_amount": "high", "bill_date": "high" },
+  "extraction_confidence": "high | medium | low",
+  "extraction_notes": "Note anything unclear, handwritten, or missing",
+  "raw_text": "All visible text from the document in reading order"
 }
 
-For credit_note or debit_note:
+For credit_note / debit_note:
 {
   "document_type": "credit_note",
-  "vendor_name": "Name of the issuer",
-  "vendor_gstin": "Issuer GSTIN (exactly 15 chars)",
+  "vendor_name": "Issuer business name",
+  "vendor_gstin": "Issuer GSTIN or null",
   "document_number": "Credit/debit note number",
-  "document_date": "Date in YYYY-MM-DD format",
-  "original_invoice_number": "The invoice this note is against",
-  "original_invoice_date": "Date of original invoice if shown",
-  "credit_amount": "Total credit/debit amount (numeric only)",
-  "cgst_amount": "CGST adjustment if present (numeric only)",
-  "sgst_amount": "SGST adjustment if present (numeric only)",
-  "igst_amount": "IGST adjustment if present (numeric only)",
-  "reason": "Reason for credit/debit note if stated",
-  "category": "One of: electrical, materials, groceries, services, utilities, medical, transport, other",
-  "field_confidence": {
-    "vendor_gstin": "high/medium/low",
-    "credit_amount": "high/medium/low",
-    "original_invoice_number": "high/medium/low"
-  },
-  "extraction_confidence": "high/medium/low",
-  "extraction_notes": "Brief note on anything unclear or handwritten"
+  "document_date": "YYYY-MM-DD or null",
+  "original_invoice_number": "Invoice reference or null",
+  "original_invoice_date": "YYYY-MM-DD or null",
+  "credit_amount": 500.00,
+  "credit_amount_in_words": "Rupees Five Hundred Only, or null if not shown",
+  "cgst_amount": null,
+  "sgst_amount": null,
+  "igst_amount": null,
+  "reason": "Reason if stated or null",
+  "category": "electrical | materials | groceries | services | utilities | medical | transport | other",
+  "field_confidence": { "vendor_name": "high", "credit_amount": "high" },
+  "extraction_confidence": "high | medium | low",
+  "extraction_notes": "Note anything unclear",
+  "raw_text": "All visible text from the document in reading order"
 }
 
-Return ONLY the JSON object, no explanation."""
+Rules:
+- Use null (not "null" string) for missing fields
+- Amounts must be numbers, never strings
+- NEVER round amounts — preserve exact paise (decimal places) as printed
+- extraction_confidence = "low" if vendor_name or total_amount is missing/unclear
+- Prefer a best-guess value (with low field_confidence) over null — only use null when the field is genuinely absent
+- raw_text must include all text visible in the image, in reading order (top to bottom, left to right)"""
 
 
 def load_image_as_base64(image_path: Path) -> tuple[str, str]:
@@ -158,7 +194,7 @@ def _call_claude(model: str, image_data: str, media_type: str) -> tuple[dict, in
     start = time.perf_counter()
     message = client.messages.create(
         model=model,
-        max_tokens=1536,
+        max_tokens=3072,
         messages=[
             {
                 "role": "user",
@@ -197,10 +233,86 @@ def _is_valid_gstin(gstin: str | None) -> bool:
     return bool(re.fullmatch(r"[0-3][0-9][A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]", gstin))
 
 
+_WORD_UNITS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+}
+_WORD_SCALES = {"hundred": 100, "thousand": 1_000, "lakh": 100_000, "lac": 100_000, "crore": 10_000_000, "million": 1_000_000, "billion": 1_000_000_000}
+
+
+def _parse_amount_in_words(phrase):
+    if not phrase or not isinstance(phrase, str):
+        return None
+    text = phrase.lower()
+    for junk in ("rupees", "rupee", "inr", "rs.", "rs", "only", "₹", ".", ",", "-"):
+        text = text.replace(junk, " ")
+    if " and " in text:
+        rupee_part, paise_part = text.split(" and ", 1)
+    else:
+        rupee_part, paise_part = text, ""
+    if "paise" in paise_part:
+        paise_part = paise_part.split("paise")[0]
+
+    def _words_to_int(s):
+        tokens = [t for t in s.split() if t]
+        if not tokens:
+            return None
+        total, current, saw_any = 0, 0, False
+        for tok in tokens:
+            if tok in _WORD_UNITS:
+                current += _WORD_UNITS[tok]
+                saw_any = True
+            elif tok == "hundred":
+                current = (current or 1) * 100
+                saw_any = True
+            elif tok in _WORD_SCALES:
+                total += (current or 1) * _WORD_SCALES[tok]
+                current = 0
+                saw_any = True
+        if not saw_any:
+            return None
+        return total + current
+
+    rupees = _words_to_int(rupee_part)
+    if rupees is None:
+        return None
+    paise = _words_to_int(paise_part) or 0
+    return float(rupees) + (paise / 100.0)
+
+
+def _words_disagree_with_numeric(extracted):
+    phrase = extracted.get("total_amount_in_words") or extracted.get("credit_amount_in_words")
+    numeric = extracted.get("total_amount") or extracted.get("credit_amount")
+    if numeric in (None, "", "null") or not phrase:
+        return False
+    parsed = _parse_amount_in_words(phrase)
+    if parsed is None or parsed <= 0:
+        return False
+    try:
+        numeric_f = float(numeric)
+    except (TypeError, ValueError):
+        return False
+    if numeric_f <= 0:
+        return False
+    ratio = max(numeric_f, parsed) / min(numeric_f, parsed)
+    return ratio > 1.05
+
+
 def _needs_sonnet_retry(extracted: dict) -> bool:
     """Return True if the extraction has critical quality issues that warrant a Sonnet retry."""
     confidence = extracted.get("extraction_confidence", "high")
     if confidence == "low":
+        return True
+    # Always retry if total amount is missing — it's the most critical field
+    total = extracted.get("total_amount")
+    if total is None or total in ("null", ""):
+        return True
+    # Retry if amount-in-words disagrees with numeric total (scale/decimal error)
+    if _words_disagree_with_numeric(extracted):
         return True
     if confidence == "medium":
         gstin = extracted.get("vendor_gstin")
@@ -245,6 +357,20 @@ def extract_with_claude(image_path: Path, sonnet_fallback: bool = True) -> dict:
         total_in_tok  += in_tok2
         total_out_tok += out_tok2
         total_elapsed += elapsed2
+
+    # Word-form correction: trust the amount-in-words over the numeric reading for scale errors
+    if _words_disagree_with_numeric(extracted):
+        phrase = extracted.get("total_amount_in_words") or extracted.get("credit_amount_in_words")
+        parsed = _parse_amount_in_words(phrase)
+        if parsed is not None and parsed > 0:
+            old_total = extracted.get("total_amount") or extracted.get("credit_amount")
+            if extracted.get("total_amount") not in (None, "", "null"):
+                extracted["total_amount"] = parsed
+            elif extracted.get("credit_amount") not in (None, "", "null"):
+                extracted["credit_amount"] = parsed
+            note = extracted.get("extraction_notes") or ""
+            extracted["extraction_notes"] = (note + " | " if note else "") + f"Corrected via word-form: {old_total} → {parsed} (words: '{phrase}')"
+            print(f"(word-form correction: {old_total} → {parsed}) ", end="", flush=True)
 
     cost_inr = _model_cost_inr(HAIKU_MODEL, in_tok, out_tok)
     if model_used == SONNET_MODEL:
