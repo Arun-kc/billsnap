@@ -1,142 +1,99 @@
-# Project: BillSnap - Bill & Receipt Digitization for Indian SMEs
+# BillSnap Project Instructions
 
 ## Mission
+BillSnap helps non-tech-savvy Indian small business owners digitize paper bills and receipts by taking a photo, reviewing extracted details, and exporting accountant-ready spreadsheets.
 
-BillSnap helps Indian small shop owners digitize their bills without typing anything.
-The primary user is a non-tech-savvy shop owner (40s–60s, South India) who currently
-relies on a family member to manually enter bills into Excel at the end of every quarter.
+## Primary user
+The first target user is Arun's father: a Kerala electric shop owner in his 60s who uses a smartphone mainly for WhatsApp and currently depends on Arun to enter bills into Excel every quarter.
 
-BillSnap eliminates that quarterly crunch: snap a photo of a bill, confirm the extracted
-details, and export a clean spreadsheet for your accountant — in minutes, not hours.
+## Product goal
+Eliminate the quarterly bill-entry crunch. The product should feel simple, reassuring, and self-serve after initial setup.
 
-The V1 scope:
-- Single-tenant, mobile-first web app.
-- Upload image/PDF → OCR extraction → user review/edit → monthly CSV/Excel export.
-- No full accounting, no direct GST filing, no multi-org features, no email automation.
+## V1 scope
+Build and maintain only this flow:
+- Upload bill image or PDF
+- Run OCR extraction
+- Map OCR data into BillSnap schema
+- Let user review and edit extracted details
+- Export monthly CSV or Excel for accountant use
 
-## Tech Stack & Constraints
+## V1 non-goals
+Do not add these unless the user explicitly approves:
+- Full accounting system features
+- GST filing
+- Multi-tenant or multi-organization support
+- Email automation
+- Complex analytics dashboards
+- Deep ERP integrations
 
-- Backend: Python (FastAPI) OR Node (Express/Nest) – decide once and stay consistent.
-- Frontend: React / Next.js with a simple, mobile-friendly UI.
-- Data: Postgres for metadata, object storage (S3-compatible) for bill images.
-- OCR: Start with a commercial invoice OCR API + LLM mapping into our schema.
-- Security: Never log or print raw keys or full personal identifiers.
-- Testing: Use ECC TDD workflows; critical functions must have tests.
+## Repo structure
+- `app/` = FastAPI backend
+- `web-app/` = main product UI in Next.js
+- `landing/` = marketing/waitlist site
+- `tests/` = backend tests
+- `evals/ocr_benchmark/` = OCR experiments and benchmarking
+- `docs/` = product and architecture context
 
-## Subagents & AI Teams
+## Technical decisions
+- Backend: Python + FastAPI
+- Frontend: Next.js
+- Data: Postgres for metadata
+- Files: S3-compatible object storage
+- OCR: commercial OCR API plus LLM/schema mapping
+- Migrations: Alembic
 
-Use these global subagents from Everything Claude Code for engineering tasks:
-- `planner` – feature planning and breakdown.
-- `architect` – system and data model design.
-- `tdd-guide` – test-first implementation.
-- `code-reviewer` – style, correctness, and refactor suggestions.
-- `security-reviewer` – security, PII handling, and compliance considerations.
+Stay consistent with this stack. Do not introduce a second backend stack.
 
-Use these Agency Agents for auxiliary work:
-- Engineering: `Frontend Developer`, `Backend Architect`, `DevOps Automator`.
-- Product: `Product Manager`, `Sprint Prioritizer`.
-- Marketing: `Growth Hacker`, `Content Creator`, `SEO Specialist`.
-- Ops/Analytics: `Analytics Reporter`, `Finance Tracker`.
-- Quality: `Reality Checker` for “is this ready to show to real users?”.
+## Coding rules
+- Keep backend layered: routers -> services -> models/schemas.
+- Keep frontend mobile-first and simple.
+- Prefer small, reversible changes.
+- Reuse existing modules before adding new abstractions.
+- Avoid premature generic frameworks inside the repo.
+- Keep code readable for future Claude sessions and human review.
 
-When I say “delegate” or “activate” one of these roles in a prompt,
-switch into that agent’s mode and follow its documented workflow.
+## Testing rules
+Critical flows must have tests or updated tests:
+- OCR mapping and normalization
+- Bill creation and update flows
+- Export formatting and totals
+- Worker/job processing behavior
+- Core API routes
 
-## Workflow Rules for This Repo
+When changing critical logic, update tests in the same task.
 
-- Always start new features with `planner` and `architect` to:
-  - Clarify user stories and acceptance criteria.
-  - Propose minimal data models and API contracts.
+## Security and privacy rules
+- Never log raw API keys, secrets, or tokens.
+- Never log full personal identifiers or raw OCR payloads unless explicitly redacted.
+- Treat uploaded bills and receipts as sensitive business documents.
+- Validate uploaded file types and sizes.
+- Use environment variables for secrets.
+- Flag security-sensitive changes for review.
 
-- Implementation:
-  - Use `tdd-guide` to write tests before or alongside code for core flows.
-  - Keep backend and frontend cleanly separated, with clear API contracts.
+## UX rules
+- Default to mobile-first UX.
+- Use warm, jargon-free language.
+- Optimize for users in their 40s-60s with low technical confidence.
+- Use large tap targets and step-by-step flows.
+- Malayalam helper labels are useful on key actions like Upload, Review, and Export.
 
-- Quality & Security:
-  - Before calling anything “done”, run `code-reviewer` and `security-reviewer`
-    over the relevant files.
-  - Never hardcode secrets; use environment variables and clearly mark
-    placeholders in the code.
+## Ask before major changes
+Pause and ask before making any of these changes:
+- Changing OCR vendor or OCR response mapping strategy
+- Changing core bill/export schema
+- Adding auth complexity or multi-tenant architecture
+- Merging `landing/` and `web-app/`
+- Expanding product scope beyond V1
 
-- Documentation:
-  - Use `doc-updater` (if available in ECC) or an Agency Technical Writer agent
-    to keep README and API docs in sync with code changes.
+## Recommended workflow
+For significant feature work:
+1. Use the local `planner` agent to produce user story, acceptance criteria, and tasks.
+2. Use the local `architect` agent if the feature affects API contracts, schema, storage, workers, or cross-app boundaries.
+3. Use the local `tdd-guide` agent for critical logic before implementation.
+4. Implement the smallest working vertical slice.
+5. Use the local `code-reviewer` and `security-reviewer` before calling work done.
+6. Use `doc-updater` when docs, setup, API behavior, or flows changed.
 
-- Marketing & Launch:
-  - For landing page copy, emails, and content, use
-    `Growth Hacker` + `Content Creator` + `SEO Specialist`.
-  - Use `Analytics Reporter` to define and refine KPIs and simple dashboards.
-
-## Project Context You Should Remember
-
-- **First user:** Arun's father — 60s, electric shop owner in Kerala, not tech-savvy,
-  uses smartphone for WhatsApp. Full dependency on Arun for bill digitization today.
-- **Primary pain:** Bills pile up all quarter, then require hours of manual Excel entry.
-- **Primary value:** Eliminate the quarterly crunch; let the shop owner self-serve
-  with minimal handholding after initial setup.
-- **V1 success signal:** "That was easy and it saved a lot of time." (self-reported)
-- **Budget:** ₹1,000–5,000/month for OCR + hosting. Keep costs minimal until user base grows.
-- **Build pace:** ~8 hrs/week.
-- Phase 1: Build a version that works for Arun's father without external help.
-- Phase 2: Onboard 3–5 friendly local businesses and learn from their usage.
-
-## Brand & Product Decisions
-
-- **Name:** BillSnap
-- **Tagline:** "Snap a bill. Done."
-- **Tone:** Warm, encouraging, jargon-free. Like a patient younger family member who
-  explains things simply. Never corporate, never condescending.
-- **Brand adjectives:** Effortless · Trustworthy · Local
-- **Core messages (repeat everywhere):**
-  1. "No more typing bills by hand."
-  2. "Ready for your accountant in minutes, not hours."
-  3. "Works in your language, at your pace."
-- **Language strategy:** English UI by default. Malayalam labels on the 3 key
-  actions (Upload, Review, Export) in V1. Full regional language toggle in V2.
-- **Design references:** Swiggy (friendliness), Apple (clarity), Airbnb (trust).
-  Mobile-first. Large tap targets, simple forms, step-by-step guidance.
-
-## What You Should Ask Before Big Changes
-
-Before major architectural decisions, changing OCR vendors, or altering
-the data model, ask me:
-- Which segment we care about first (family, shop, freelancer, etc.).
-- What problems we’ve seen with accuracy and review time so far.
-- Any feedback or complaints from early users.
-
-## Team Collaboration & Kickoff Workflow
-
-For high-level planning, one agent acts as Orchestrator:
-- Prefer `planner` (ECC) for technical/feature planning.
-- Prefer `Agency Orchestrator` (from Agency Agents) when the work
-  spans product, brand, and marketing in addition to engineering.
-
-When I say "run a workshop" or "run a kickoff", the Orchestrator must:
-1. Ask me 5–10 focused questions to clarify:
-   - Target users and geography
-   - The main problem we solve
-   - How success is measured (e.g., time saved, fewer errors)
-   - Budget/constraints (time, money, tech)
-   - Any initial ideas for name/branding
-
-2. Summarise my answers back to me and wait for my confirmation.
-
-3. Coordinate a small team of specialists:
-   - Product: `Product Manager`, `Sprint Prioritizer`
-   - Brand/Marketing: `Growth Hacker`, `Content Creator`, `SEO Specialist`
-   - Engineering: `architect`, `Frontend Developer`, `Backend Architect`
-
-4. Produce:
-   - A 1-page product brief (problem, audience, solution, scope of V1)
-   - 3–5 name & tagline options
-   - A simple brand direction (tone, 2–3 colours, key messages)
-   - A short initial launch plan (how to get first 5–10 users)
-
-5. Propose concrete edits to CLAUDE.md under:
-   - Mission
-   - Target users
-   - Brand & product decisions
-   - Roadmap
-
-Do NOT silently edit CLAUDE.md. Always show me the proposed changes
-first and apply them only after I approve.
+## Files to consult
+@docs/product-brief.md
+@docs/architecture.md
