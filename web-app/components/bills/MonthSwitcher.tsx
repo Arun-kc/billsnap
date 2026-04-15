@@ -17,9 +17,10 @@ function displayMonth(month: string): string {
 interface MonthSwitcherProps {
   value: string; // YYYY-MM
   onChange: (month: string) => void;
+  dark?: boolean; // render on dark (aubergine) background
 }
 
-export default function MonthSwitcher({ value, onChange }: MonthSwitcherProps) {
+export default function MonthSwitcher({ value, onChange, dark = false }: MonthSwitcherProps) {
   const thisMonth = formatMonth(new Date());
   const isCurrentMonth = value === thisMonth;
 
@@ -36,22 +37,25 @@ export default function MonthSwitcher({ value, onChange }: MonthSwitcherProps) {
     onChange(formatMonth(d));
   };
 
+  const textColor = dark ? "text-white" : "text-[var(--color-aubergine)]";
+  const labelColor = dark ? "text-white" : "text-[var(--color-text)]";
+
   return (
-    <div className="flex items-center justify-between px-5 py-3 bg-white border-b border-[var(--color-border)]">
+    <div className={`flex items-center justify-between px-3 py-2 ${!dark ? "bg-white border-b border-[var(--color-border)]" : ""}`}>
       <button
         onClick={prev}
-        className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--color-aubergine)] text-lg font-bold"
+        className={`min-w-[44px] min-h-[44px] flex items-center justify-center ${textColor} text-xl font-bold`}
         aria-label="Previous month"
       >
         ‹
       </button>
-      <span className="text-base font-semibold text-[var(--color-text)]">
+      <span className={`text-sm font-semibold ${labelColor}`}>
         {displayMonth(value)}
       </span>
       <button
         onClick={next}
         disabled={isCurrentMonth}
-        className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--color-aubergine)] text-lg font-bold disabled:opacity-30"
+        className={`min-w-[44px] min-h-[44px] flex items-center justify-center ${textColor} text-xl font-bold disabled:opacity-30`}
         aria-label="Next month"
       >
         ›

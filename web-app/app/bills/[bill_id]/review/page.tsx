@@ -13,13 +13,24 @@ import StickyFooter from "@/components/ui/StickyFooter";
 const DOCUMENT_TYPES = [
   { value: "tax_invoice", label: "Tax Invoice" },
   { value: "bill_of_supply", label: "Bill of Supply" },
+  { value: "receipt", label: "Receipt" },
   { value: "credit_note", label: "Credit Note" },
   { value: "debit_note", label: "Debit Note" },
-  { value: "receipt", label: "Receipt" },
   { value: "other", label: "Other" },
 ];
 
-function FieldWrapper({
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className="text-xs font-semibold uppercase tracking-widest"
+      style={{ color: "var(--color-text-muted)" }}
+    >
+      {children}
+    </p>
+  );
+}
+
+function Field({
   label,
   lowConfidence = false,
   children,
@@ -29,15 +40,16 @@ function FieldWrapper({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className={`flex flex-col gap-1.5 ${lowConfidence ? "border-l-4 pl-3" : ""}`}
-      style={lowConfidence ? { borderColor: "var(--color-warning)" } : undefined}
-    >
-      <label className="text-xs font-medium text-[var(--color-text-muted)]">
+    <div className="flex flex-col gap-1.5">
+      <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-muted)]">
         {label}
         {lowConfidence && (
-          <span className="ml-1.5 text-[var(--color-warning)]" title="We're not fully sure — please check">
-            ⚠
+          <span
+            className="text-xs font-medium px-1.5 py-0.5 rounded-full"
+            style={{ background: "var(--color-warning-bg)", color: "var(--color-warning)" }}
+            title="We're not sure — please check"
+          >
+            Check this
           </span>
         )}
       </label>
@@ -46,8 +58,10 @@ function FieldWrapper({
   );
 }
 
-const inputClass =
-  "w-full h-12 rounded-xl border border-[var(--color-border)] px-4 bg-white text-[var(--color-text)] focus:outline-none focus:border-[var(--color-aubergine)] transition-colors";
+const inputBase =
+  "w-full h-12 rounded-xl border border-[var(--color-border)] px-4 bg-white text-[var(--color-text)] focus:outline-none focus:ring-2 transition-all";
+const inputFocusRing = "focus:ring-[var(--color-aubergine)] focus:ring-opacity-30 focus:border-[var(--color-aubergine)]";
+const inputClass = `${inputBase} ${inputFocusRing}`;
 
 function ReviewContent({ bill_id }: { bill_id: string }) {
   const router = useRouter();
@@ -61,7 +75,6 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
   const [catOpen, setCatOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
 
-  // Editable fields
   const [vendorName, setVendorName] = useState("");
   const [billDate, setBillDate] = useState<string | undefined>(undefined);
   const [totalAmount, setTotalAmount] = useState<number | undefined>(undefined);
@@ -96,15 +109,12 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
         setIgstAmount(b.igst_amount ?? 0);
         setNotes(b.user_notes ?? "");
       })
-      .catch(() => {
-        // If fetch fails, treat as new/blank
-      })
+      .catch(() => {/* treat as blank */})
       .finally(() => setLoading(false));
   }, [bill_id]);
 
   const isLowConf = (field: string) => {
     if (!bill?.extraction_confidence) return false;
-    // If overall confidence is low (< 0.50), flag critical fields
     if (bill.extraction_confidence < 0.50) {
       return ["vendor_name", "total_amount", "vendor_gstin", "bill_date"].includes(field);
     }
@@ -147,184 +157,227 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
 
   return (
     <main className="min-h-dvh flex flex-col bg-[var(--color-surface)]">
-      {/* Top bar */}
-      <header className="flex items-center justify-between px-5 pt-safe-top py-4 border-b border-[var(--color-border)]">
+      {/* ── Top bar ── */}
+      <header
+        className="flex items-center justify-between px-5 pt-safe-top py-3.5"
+        style={{ background: "var(--color-aubergine)" }}
+      >
         <button
           onClick={() => router.back()}
-          className="text-[var(--color-text-secondary)] text-sm font-medium min-w-[44px] min-h-[44px] flex items-center"
+          className="text-white text-sm font-medium min-w-[44px] min-h-[44px] flex items-center gap-1 opacity-80"
         >
-          ← Back
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Back
         </button>
-        <span className="text-sm font-medium text-[var(--color-text-muted)]">
-          Step 2 / 3
+        <span
+          className="text-sm font-semibold text-white"
+          style={{ fontFamily: "var(--font-urbanist)" }}
+        >
+          Review Bill
         </span>
+        <span className="text-xs text-white opacity-60 min-w-[44px] text-right">2 / 3</span>
       </header>
 
-      <div className="flex flex-col gap-5 px-5 pt-5 pb-32">
-        {/* OCR failed banner */}
+      <div className="flex flex-col gap-5 px-5 pt-5 pb-36">
+        {/* OCR failed notice */}
         {ocrFailed && (
-          <div className="rounded-xl border border-[var(--color-info)] bg-[var(--color-info-bg)] p-4 text-sm text-[var(--color-info)]">
-            ℹ️ We couldn&apos;t read this bill clearly. Please fill in the details below.
+          <div
+            className="rounded-2xl p-4 text-sm flex gap-3 items-start"
+            style={{ background: "var(--color-info-bg)", color: "var(--color-info)" }}
+          >
+            <span className="text-lg leading-none mt-0.5">ℹ️</span>
+            <p>We couldn&apos;t read this bill clearly. Please fill in the details below.</p>
           </div>
         )}
 
-        {/* Bill thumbnail + vendor summary */}
+        {/* ── Bill thumbnail ── */}
         {bill?.thumbnail_url && (
-          <div className="flex items-start gap-4 p-4 bg-white rounded-2xl border border-[var(--color-border)]">
-            <div className="relative w-[60px] h-[80px] rounded-lg overflow-hidden flex-shrink-0 bg-[var(--color-surface-2)]">
+          <div
+            className="flex items-center gap-4 p-4 rounded-2xl bg-white border border-[var(--color-border)]"
+          >
+            <div className="relative w-[56px] h-[72px] rounded-xl overflow-hidden flex-shrink-0 bg-[var(--color-surface-2)]">
               <Image
                 src={bill.thumbnail_url}
-                alt="Bill thumbnail"
+                alt="Bill photo"
                 fill
                 className="object-cover"
-                sizes="60px"
+                sizes="56px"
               />
             </div>
-            <div className="flex flex-col gap-0.5 justify-center py-1">
-              <p className="text-base font-semibold text-[var(--color-text)] leading-snug">
-                {vendorName || "Unknown Vendor"}
+            <div className="flex flex-col gap-0.5">
+              <p className="text-xs text-[var(--color-text-muted)] font-medium">Bill photo</p>
+              <p className="text-sm font-semibold text-[var(--color-text)] leading-snug">
+                {vendorName || "—"}
               </p>
               {billDate && (
-                <p className="text-sm text-[var(--color-text-muted)]">
-                  {formatForDisplay(billDate)}
-                </p>
+                <p className="text-xs text-[var(--color-text-muted)]">{formatForDisplay(billDate)}</p>
               )}
             </div>
           </div>
         )}
 
-        <div className="h-px bg-[var(--color-border)]" />
-
         {/* ── Primary fields ── */}
-        <FieldWrapper label="Vendor Name" lowConfidence={isLowConf("vendor_name")}>
-          <input
-            type="text"
-            className={inputClass}
-            style={{ fontSize: "var(--text-lg)" }}
-            value={vendorName}
-            onChange={(e) => setVendorName(e.target.value)}
-            placeholder="e.g. Sharma Electricals"
-          />
-        </FieldWrapper>
+        <div className="flex flex-col gap-4">
+          <SectionLabel>Key details</SectionLabel>
 
-        <FieldWrapper label="Date" lowConfidence={isLowConf("bill_date")}>
-          <button
-            type="button"
-            onClick={() => setDateOpen(true)}
-            className={`${inputClass} flex items-center justify-between text-left`}
-            style={{ fontSize: "var(--text-base)" }}
-          >
-            <span className={billDate ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}>
-              {billDate ? formatForDisplay(billDate) : "Select date"}
-            </span>
-            <span className="text-[var(--color-text-muted)]">📅</span>
-          </button>
-        </FieldWrapper>
+          <Field label="Vendor / Shop name" lowConfidence={isLowConf("vendor_name")}>
+            <input
+              type="text"
+              className={inputClass}
+              style={{ fontSize: "var(--text-base)", fontFamily: "var(--font-urbanist)", fontWeight: 600 }}
+              value={vendorName}
+              onChange={(e) => setVendorName(e.target.value)}
+              placeholder="e.g. Sharma Electricals"
+            />
+          </Field>
 
-        <FieldWrapper label="Total Amount (₹)" lowConfidence={isLowConf("total_amount")}>
-          <input
-            type="number"
-            inputMode="decimal"
-            className={`${inputClass} font-semibold`}
-            style={{ fontSize: "1.375rem" /* 22sp */ }}
-            value={totalAmount !== undefined ? formatAmount(totalAmount) : ""}
-            onChange={(e) => setTotalAmount(parseAmount(e.target.value))}
-            placeholder="0.00"
-          />
-        </FieldWrapper>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Date" lowConfidence={isLowConf("bill_date")}>
+              <button
+                type="button"
+                onClick={() => setDateOpen(true)}
+                className={`${inputClass} flex items-center justify-between text-left`}
+                style={{ fontSize: "var(--text-sm)" }}
+              >
+                <span className={billDate ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}>
+                  {billDate ? formatForDisplay(billDate) : "Pick date"}
+                </span>
+                <span className="text-base">📅</span>
+              </button>
+            </Field>
 
-        <FieldWrapper label="Category">
-          <button
-            type="button"
-            onClick={() => setCatOpen(true)}
-            className={`${inputClass} flex items-center justify-between text-left`}
-          >
-            <span className={category ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}>
-              {category ?? "Select category"}
-            </span>
-            <span className="text-[var(--color-text-muted)] text-sm">▼</span>
-          </button>
-        </FieldWrapper>
+            <Field label="Category">
+              <button
+                type="button"
+                onClick={() => setCatOpen(true)}
+                className={`${inputClass} flex items-center justify-between text-left`}
+                style={{ fontSize: "var(--text-sm)" }}
+              >
+                <span className={category ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"}>
+                  {category ? category.charAt(0).toUpperCase() + category.slice(1) : "Category"}
+                </span>
+                <span className="text-[var(--color-text-muted)] text-xs">▼</span>
+              </button>
+            </Field>
+          </div>
+
+          <Field label="Total amount (₹)" lowConfidence={isLowConf("total_amount")}>
+            <div className="relative">
+              <span
+                className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-[var(--color-text-muted)]"
+                style={{ fontSize: "var(--text-lg)" }}
+              >
+                ₹
+              </span>
+              <input
+                type="number"
+                inputMode="decimal"
+                className={`${inputClass} pl-8 font-bold`}
+                style={{ fontSize: "1.5rem" }}
+                value={totalAmount !== undefined ? formatAmount(totalAmount) : ""}
+                onChange={(e) => setTotalAmount(parseAmount(e.target.value))}
+                placeholder="0.00"
+              />
+            </div>
+          </Field>
+        </div>
 
         {/* ── More details (collapsible) ── */}
-        <button
-          type="button"
-          onClick={() => setShowMore((v) => !v)}
-          className="flex items-center justify-between text-sm font-medium text-[var(--color-aubergine)] min-h-[44px]"
+        <div
+          className="rounded-2xl overflow-hidden border border-[var(--color-border)] bg-white"
         >
-          {showMore ? "▲ Less details" : "▼ More details"}
-        </button>
+          <button
+            type="button"
+            onClick={() => setShowMore((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3.5 text-sm font-semibold text-[var(--color-aubergine)] min-h-[44px]"
+          >
+            <span>More details (GSTIN, bill number, taxes)</span>
+            <span className="text-xs">{showMore ? "▲" : "▼"}</span>
+          </button>
 
-        {showMore && (
-          <div className="flex flex-col gap-5 animate-slide-up">
-            <FieldWrapper label="Bill Number">
-              <input
-                type="text"
-                className={inputClass}
-                value={billNumber}
-                onChange={(e) => setBillNumber(e.target.value)}
-                placeholder="e.g. INV-2026-042"
+          {showMore && (
+            <div className="flex flex-col gap-4 px-4 pb-4 pt-1 animate-slide-up border-t border-[var(--color-border)]">
+              <Field label="Bill / Invoice number">
+                <input
+                  type="text"
+                  className={inputClass}
+                  value={billNumber}
+                  onChange={(e) => setBillNumber(e.target.value)}
+                  placeholder="e.g. INV-2026-042"
+                />
+              </Field>
+
+              <Field label="Document type">
+                <select
+                  className={inputClass}
+                  value={documentType}
+                  onChange={(e) => setDocumentType(e.target.value)}
+                >
+                  {DOCUMENT_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Vendor GSTIN" lowConfidence={isLowConf("vendor_gstin")}>
+                <input
+                  type="text"
+                  className={`${inputClass} uppercase tracking-widest`}
+                  style={{ fontSize: "var(--text-sm)", letterSpacing: "0.08em" }}
+                  value={vendorGstin}
+                  onChange={(e) => setVendorGstin(e.target.value.toUpperCase())}
+                  placeholder="e.g. 32AABCU9603R1ZX"
+                  maxLength={15}
+                />
+              </Field>
+
+              <TaxBreakdownGroup
+                taxableAmount={taxableAmount}
+                cgstAmount={cgstAmount}
+                sgstAmount={sgstAmount}
+                igstAmount={igstAmount}
+                onChangeTaxable={setTaxableAmount}
+                onChangeCgst={setCgstAmount}
+                onChangeSgst={setSgstAmount}
+                onChangeIgst={setIgstAmount}
               />
-            </FieldWrapper>
 
-            <FieldWrapper label="Document Type">
-              <select
-                className={inputClass}
-                value={documentType}
-                onChange={(e) => setDocumentType(e.target.value)}
-              >
-                {DOCUMENT_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </FieldWrapper>
-
-            <FieldWrapper label="Vendor GSTIN" lowConfidence={isLowConf("vendor_gstin")}>
-              <input
-                type="text"
-                className={`${inputClass} uppercase`}
-                value={vendorGstin}
-                onChange={(e) => setVendorGstin(e.target.value.toUpperCase())}
-                placeholder="e.g. 32AABCU9603R1ZX"
-                maxLength={15}
-              />
-            </FieldWrapper>
-
-            <TaxBreakdownGroup
-              taxableAmount={taxableAmount}
-              cgstAmount={cgstAmount}
-              sgstAmount={sgstAmount}
-              igstAmount={igstAmount}
-              onChangeTaxable={setTaxableAmount}
-              onChangeCgst={setCgstAmount}
-              onChangeSgst={setSgstAmount}
-              onChangeIgst={setIgstAmount}
-            />
-
-            <FieldWrapper label="Notes (optional)">
-              <textarea
-                className={`${inputClass} h-20 py-3 resize-none`}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Any additional notes…"
-              />
-            </FieldWrapper>
-          </div>
-        )}
+              <Field label="Notes (optional)">
+                <textarea
+                  className={`${inputClass} h-20 py-3 resize-none`}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Any additional notes…"
+                />
+              </Field>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Sticky CTA */}
+      {/* ── Sticky CTA ── */}
       <StickyFooter>
         <button
           onClick={handleSave}
           disabled={saving}
-          className="w-full h-14 rounded-2xl text-white font-semibold text-base flex flex-col items-center justify-center gap-0.5 disabled:opacity-60 transition-opacity"
-          style={{ background: "var(--color-aubergine)" }}
+          className="w-full h-14 rounded-2xl text-white font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60 transition-opacity"
+          style={{ background: "var(--color-aubergine)", fontFamily: "var(--font-urbanist)" }}
         >
-          <span>✓ Looks good!</span>
-          <span className="text-xs font-normal opacity-80">ശരി</span>
+          {saving ? (
+            <span>Saving…</span>
+          ) : (
+            <>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M4 10l4 4 8-8" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span>Confirm &amp; Save</span>
+              <span className="text-sm font-normal opacity-70 ml-1">ശരി</span>
+            </>
+          )}
         </button>
       </StickyFooter>
 
@@ -352,7 +405,11 @@ export default function ReviewPage({
 }) {
   const { bill_id } = use(params);
   return (
-    <Suspense fallback={<div className="min-h-dvh flex items-center justify-center text-[var(--color-text-muted)]">Loading…</div>}>
+    <Suspense fallback={
+      <div className="min-h-dvh flex items-center justify-center text-[var(--color-text-muted)]">
+        Loading…
+      </div>
+    }>
       <ReviewContent bill_id={bill_id} />
     </Suspense>
   );
