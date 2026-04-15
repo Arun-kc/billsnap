@@ -272,7 +272,7 @@ function ReviewContent({ bill_id }: { bill_id: string }) {
                 ₹
               </span>
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
                 className={`${inputClass} pl-8 font-bold`}
                 style={{ fontSize: "1.5rem" }}
