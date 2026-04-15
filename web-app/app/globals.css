@@ -1,0 +1,190 @@
+@import "tailwindcss";
+
+/* ─── Brand Tokens ─────────────────────────────────────────────────────────── */
+:root {
+  /* Palette */
+  --color-aubergine:     #5c2d91;
+  --color-aubergine-dark:#3e1d64;
+  --color-aubergine-light:#7b4db5;
+  --color-gold:          #c9a227;
+  --color-gold-light:    #e8c84a;
+  --color-gold-dark:     #a07e18;
+
+  /* Surfaces */
+  --color-surface:       #faf9fc;
+  --color-surface-2:     #f2eef8;
+  --color-surface-card:  #ffffff;
+  --color-border:        #e5dff0;
+  --color-border-strong: #c8b8e8;
+
+  /* Text */
+  --color-text:          #1a1225;
+  --color-text-secondary:#5a4e72;
+  --color-text-muted:    #9488aa;
+  --color-text-inverse:  #ffffff;
+
+  /* Status */
+  --color-success:       #16a34a;
+  --color-success-bg:    #f0fdf4;
+  --color-error:         #dc2626;
+  --color-error-bg:      #fef2f2;
+  --color-warning:       #d97706;
+  --color-warning-bg:    #fffbeb;
+  --color-info:          #2563eb;
+  --color-info-bg:       #eff6ff;
+
+  /* Typography scale */
+  --text-xs:   clamp(0.7rem,  0.68rem + 0.1vw,  0.75rem);
+  --text-sm:   clamp(0.85rem, 0.82rem + 0.15vw, 0.875rem);
+  --text-base: clamp(1rem,    0.96rem + 0.2vw,  1.0625rem);
+  --text-lg:   clamp(1.125rem,1.07rem + 0.28vw, 1.25rem);
+  --text-xl:   clamp(1.25rem, 1.18rem + 0.37vw, 1.5rem);
+  --text-2xl:  clamp(1.5rem,  1.4rem  + 0.5vw,  1.875rem);
+  --text-3xl:  clamp(1.875rem,1.7rem  + 0.9vw,  2.5rem);
+
+  /* Spacing rhythm */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* Radius */
+  --radius-sm:  0.375rem;
+  --radius-md:  0.75rem;
+  --radius-lg:  1.25rem;
+  --radius-xl:  2rem;
+  --radius-full: 9999px;
+
+  /* Motion */
+  --duration-fast:   150ms;
+  --duration-normal: 280ms;
+  --duration-slow:   450ms;
+  --ease-out-expo:   cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring:     cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@theme inline {
+  --color-background: var(--color-surface);
+  --color-foreground: var(--color-text);
+  --font-sans: var(--font-urbanist), system-ui, sans-serif;
+  --font-body: var(--font-manrope), system-ui, sans-serif;
+}
+
+/* ─── Base ─────────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-body, system-ui, sans-serif);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Utility Classes ───────────────────────────────────────────────────────── */
+.brand-gradient {
+  background: linear-gradient(135deg, var(--color-aubergine) 0%, var(--color-aubergine-light) 60%, #9b5de5 100%);
+}
+
+.brand-gradient-text {
+  background: linear-gradient(135deg, var(--color-aubergine) 0%, #9b5de5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gold-shimmer {
+  background: linear-gradient(90deg, var(--color-gold-dark) 0%, var(--color-gold-light) 50%, var(--color-gold-dark) 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2.5s linear infinite;
+}
+
+@keyframes shimmer {
+  to { background-position: 200% center; }
+}
+
+/* ─── Focus styles ──────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-aubergine);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: var(--radius-full); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-aubergine-light); }
+
+/* ─── Upload drop zone ──────────────────────────────────────────────────────── */
+.drop-zone-active {
+  border-color: var(--color-aubergine) !important;
+  background: var(--color-surface-2) !important;
+  transform: scale(1.01);
+}
+
+/* ─── Spin animation ────────────────────────────────────────────────────────── */
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow { animation: spin-slow 2s linear infinite; }
+
+/* ─── Pulse dot ─────────────────────────────────────────────────────────────── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.85); }
+}
+.animate-pulse-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
+
+/* ─── Slide up ──────────────────────────────────────────────────────────────── */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up { animation: slide-up var(--duration-normal) var(--ease-out-expo) both; }
+
+/* ─── Fade in ───────────────────────────────────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade-in { animation: fade-in var(--duration-normal) ease both; }
+
+/* ─── Processing steps ──────────────────────────────────────────────────────── */
+@keyframes step-complete {
+  0%   { transform: scale(0.7); opacity: 0; }
+  60%  { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-step-complete { animation: step-complete var(--duration-slow) var(--ease-spring) both; }
+
+/* ─── Reduced motion ────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
